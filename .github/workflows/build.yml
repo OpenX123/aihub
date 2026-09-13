@@ -116,3 +116,17 @@ jobs:
               --title "Aihub $tag" \
               --generate-notes
           fi
+
+      # 系统提示（Windows SmartScreen / macOS Gatekeeper）得写在下载页上，
+      # 否则第一次用的人会以为下到了一个坏包。追加在自动生成的更新说明后面。
+      - name: 追加安装说明
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          {
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body -q .body
+            echo
+            cat .github/release-footer.md
+          } > notes.md
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
