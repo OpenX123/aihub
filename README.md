@@ -1,4 +1,4 @@
-<img width="2237" height="1550" alt="image" src="https://github.com/user-attachments/assets/fffe5945-fbd6-4e6c-a7f5-c262957c9cd8" /># Aihub
+# Aihub
 
 [![CI](https://github.com/OpenX123/aihub/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenX123/aihub/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
