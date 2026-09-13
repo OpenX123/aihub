@@ -159,12 +159,15 @@ module.exports = function runSmoke(ctx) {
       check('激活标签拿到真实站点标题', Boolean(firstView.webContents.getTitle()), firstView.webContents.getTitle());
     }
 
-    // ---- 2. 预加载：不点开也应该有视图、有标题、有图标 ----
-    // 默认开启预加载，所以启动后所有服务的视图都应该已经建好（没挂载，只加载）
-    const preloadDeadline = Date.now() + 20000;
-    while (Date.now() < preloadDeadline && !services.every((id) => ctx.views.has(id))) await wait(300);
-    check('预加载：没点开过的标签也已经建好视图', services.every((id) => ctx.views.has(id)),
-      services.filter((id) => !ctx.views.has(id)));
+    // ---- 2. 启动时只加载标签栏需要的，图标照样不用点开就有 ----
+    // v3 起预加载默认关闭：启动后只有分屏里那几栏 + 激活标签该有视图，别的服务一个进程都不占。
+    check('默认不预加载：启动后只加载标签栏当前要显示的那几栏', ctx.config.preload === false, ctx.config.preload);
+    // 注意基准是「启动时恢复的那套布局」（restored），不是上面收敛成单栏之后的 panes：
+    // setPanes 只把视图卸下来、不销毁，收掉的那一栏视图还在 views 里，拿收敛后的 panes 比会误判。
+    const onScreen = new Set(restored.concat(ctx.config.panes, ctx.config.activeId));
+    check('默认不预加载：没显示的服务没有占用渲染进程',
+      [...ctx.views.keys()].every((id) => onScreen.has(id)),
+      { 有视图: [...ctx.views.keys()], 启动时在屏幕上: [...onScreen] });
 
     // 标签栏的图标：页面 DOM 里每个标签都应该有 img，且是内置 logo（data: 或 icons/ 路径）
     const tabIcons = await win.webContents.executeJavaScript(`(() => {
@@ -242,7 +245,7 @@ module.exports = function runSmoke(ctx) {
       );
     }
 
-    // ---- 2c. 关掉预加载后，新加的服务应该等点开才创建 ----
+    // ---- 2c. 预加载开关的前后行为（不依赖默认值，两个方向都显式设一遍） ----
     const preloadBefore = ctx.config.preload;
     ctx.setPreload(false);
     await wait(200);
@@ -255,10 +258,120 @@ module.exports = function runSmoke(ctx) {
     check('关掉预加载后：点开时才创建视图', ctx.views.has(lazyExtra.id));
     ctx.removeService(lazyExtra.id, true);
     await wait(800);
-    ctx.setPreload(preloadBefore);
+    // 手动打开预加载：这时候才该把所有服务都建起来
+    ctx.setPreload(true);
     await wait(1200);
-    check('重新开启预加载后，所有服务的视图都在', services.every((id) => ctx.views.has(id)),
+    check('手动开启预加载后，所有服务的视图都在', services.every((id) => ctx.views.has(id)),
       services.filter((id) => !ctx.views.has(id)));
+    ctx.setPreload(preloadBefore);
+    await wait(300);
+    check('预加载开关能设回自检开始时的值', ctx.config.preload === preloadBefore, ctx.config.preload);
+    ctx.activate(startId, { focus: false });
+    await wait(300);
+
+    // ---- 2d. 后台标签休眠：闲够了就回收，点回去按原地址恢复，标签栏观感不变 ----
+    const napSnapshot = JSON.parse(JSON.stringify(ctx.config.hibernate));
+    check('休眠：默认开启且为 30 分钟',
+      napSnapshot.enabled === true && napSnapshot.minutes === 30, napSnapshot);
+    const napBad = ctx.setHibernate({ minutes: 7 });
+    check('休眠：非法时长被拒绝', napBad.ok === false, napBad);
+    check('休眠：合法时长能设进去',
+      ctx.setHibernate({ enabled: true, minutes: 15 }).ok === true
+        && ctx.publicState().hibernate.minutes === 15,
+      ctx.publicState().hibernate);
+
+    // 挑一个「有视图、但既不在分屏里也不是焦点」的后台标签当小白鼠
+    const napId = services.find((id) => id !== startId && ctx.views.has(id) && !ctx.config.panes.includes(id));
+    if (!napId) {
+      check('休眠：找得到一个可回收的后台标签', false, { services, panes: ctx.config.panes, views: [...ctx.views.keys()] });
+    } else {
+      const napUrl = ctx.config.lastUrls[napId] || '';
+      const backdate = () => ctx.lastActive.set(napId, Date.now() - 24 * 3600 * 1000);
+
+      // 关掉休眠：闲得再久也不该动它
+      ctx.setHibernate({ enabled: false });
+      backdate();
+      await ctx.sweepIdle();
+      check('休眠：关掉之后，闲置再久的后台标签也不会被回收', ctx.views.has(napId));
+
+      // 打开休眠：这次该收了
+      ctx.setHibernate({ enabled: true, minutes: 15 });
+      backdate();
+      const recycled = await ctx.sweepIdle();
+      await wait(300);
+      check('休眠：闲够了的后台标签被回收', !ctx.views.has(napId), { 回收: recycled, 剩余: [...ctx.views.keys()] });
+      check('休眠：分屏里正显示的标签不会被回收',
+        ctx.config.panes.every((id) => ctx.views.has(id)), { panes: ctx.config.panes, views: [...ctx.views.keys()] });
+      check('休眠：当前焦点标签不会被回收', ctx.views.has(ctx.config.activeId), ctx.config.activeId);
+
+      // 标签栏观感：名字、logo 一个都不能掉，只多一个休眠标记
+      const napTab = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+        const el = document.querySelector('#tabs .tab[data-id="${napId}"]');
+        if (!el) return 'null';
+        const img = el.querySelector('img.fav');
+        return JSON.stringify({
+          name: (el.querySelector('.name') || {}).textContent || '',
+          src: img ? img.getAttribute('src') : '',
+          local: img ? img.dataset.local : '',
+          hidden: img ? img.hidden : true,
+          nap: el.dataset.hibernated,
+        });
+      })()`));
+      check('休眠：标签还在，名字和内置 logo 都没掉',
+        Boolean(napTab) && Boolean(napTab.name) && Boolean(napTab.src)
+          && napTab.local === '1' && napTab.hidden === false,
+        napTab);
+      check('休眠：标签上打了休眠标记', Boolean(napTab) && napTab.nap === '1', napTab);
+
+      // 点回去：视图重建，并且回到休眠前那个地址
+      ctx.activate(napId, { focus: false });
+      await wait(600);
+      check('休眠：点回去时视图被重建', ctx.views.has(napId));
+      const wokeUrl = (ctx.views.get(napId) || {}).webContents
+        ? ctx.views.get(napId).webContents.getURL() : '';
+      const sameOrigin = (a, b) => {
+        try {
+          return new URL(a).origin === new URL(b).origin;
+        } catch {
+          return false;
+        }
+      };
+      check('休眠：恢复的是休眠前记住的地址，不是站点首页',
+        Boolean(napUrl) && sameOrigin(wokeUrl, napUrl), { 休眠前: napUrl, 唤醒后: wokeUrl });
+      const wokeNap = await win.webContents.executeJavaScript(`(() => {
+        const el = document.querySelector('#tabs .tab[data-id="${napId}"]');
+        return el ? el.dataset.hibernated : 'missing';
+      })()`);
+      check('休眠：唤醒后休眠标记被摘掉', wokeNap === '0', wokeNap);
+
+      // 第三方登录弹窗开着的时候整轮不收：弹窗回调要落回 opener，收掉标签本体这次登录就白做了
+      const fakePopup = { __smoke: true };
+      ctx.popups.add(fakePopup);
+      backdate();
+      const duringPopup = await ctx.sweepIdle();
+      ctx.popups.delete(fakePopup);
+      check('休眠：有登录弹窗开着时整轮都不回收',
+        duringPopup.length === 0 && ctx.views.has(napId), { 回收: duringPopup });
+
+      // 刷新一个已休眠的标签应当把它唤醒，而不是静默失效。
+      // 上面唤醒用的 activate(napId) 会把它设成当前激活标签（还会顶进 panes），而激活标签是永久豁免的，
+      // 所以要先把焦点挪回 startId，napId 才重新具备被回收的资格。
+      ctx.activate(startId, { focus: false });
+      await wait(300);
+      backdate();
+      await ctx.sweepIdle();
+      await wait(300);
+      check('休眠：再次回收成功（为刷新唤醒做准备）', !ctx.views.has(napId), [...ctx.views.keys()]);
+      ctx.reloadTab(napId);
+      await wait(600);
+      check('休眠：对休眠中的标签按刷新会把它唤醒，不是什么都不做', ctx.views.has(napId));
+    }
+
+    ctx.setHibernate(napSnapshot);
+    check('休眠：配置能还原成自检开始时的值',
+      ctx.config.hibernate.enabled === napSnapshot.enabled
+        && ctx.config.hibernate.minutes === napSnapshot.minutes,
+      ctx.config.hibernate);
     ctx.activate(startId, { focus: false });
     await wait(300);
 
