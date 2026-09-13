@@ -535,6 +535,29 @@ function saveConfig() {
   saveTimer = setTimeout(flushConfig, 400);
 }
 
+/** 取消还没落盘的延迟写入（自检结束要还原配置时用得上） */
+function cancelPendingSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+}
+
+/**
+ * 把 config 换成另一份（原地替换键，保持各处的引用有效）并立刻落盘。
+ * 自检会大改配置（加服务、改分栏、换主题……），跑完必须原样还回去，
+ * 否则用户下一次打开应用看到的是自检留下的布局。
+ */
+function replaceConfig(next) {
+  cancelPendingSave();
+  for (const key of Object.keys(config)) {
+    if (!Object.prototype.hasOwnProperty.call(next, key)) delete config[key];
+  }
+  Object.assign(config, JSON.parse(JSON.stringify(next)));
+  flushConfig();
+  return true;
+}
+
 function flushConfig() {
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -2904,7 +2927,11 @@ if (!gotLock) {
           summonWindow,
           hideWindow: hideToBackground,
           triggerHotkey: onGlobalHotkey,
+          pinWindow,
           releasePin,
+          isPinned: () => pinnedByHotkey,
+          snapshotConfig: () => JSON.parse(JSON.stringify(config)),
+          replaceConfig,
           isHotkeyRegistered: (acc) => {
             try {
               return globalShortcut.isRegistered(String(acc || ''));
