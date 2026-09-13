@@ -758,8 +758,8 @@ module.exports = function runSmoke(ctx) {
       /Aihub/i.test(ctx.app.getName()) && /Aihub/i.test(ctx.publicState().userData || ''),
       ctx.app.getName() + ' / ' + ctx.publicState().userData);
 
-    // 13.1 数据目录迁移：老目录 %APPDATA%\AI Multi Hub 会被整体搬到新名字下
-    //（用一个临时目录模拟，不碰真实数据）
+    // 13.1 数据目录迁移：老目录 %APPDATA%\AI Multi Hub 里的登录态和配置会被搬到新名字下
+    //（用临时目录模拟，不碰真实数据）
     {
       const sandboxRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aihub-migrate-'));
       const oldDir = path.join(sandboxRoot, 'AI Multi Hub');
@@ -767,26 +767,41 @@ module.exports = function runSmoke(ctx) {
       fs.mkdirSync(path.join(oldDir, 'Partitions', 'claude'), { recursive: true });
       fs.writeFileSync(path.join(oldDir, 'config.json'), '{"services":[]}', 'utf8');
       fs.writeFileSync(path.join(oldDir, 'Partitions', 'claude', 'Cookies'), 'x', 'utf8');
+
+      // 关键回归：Electron 会在主进程脚本之前就把新目录建好（只有缓存壳子），
+      // 所以「新目录已存在」不能当成「已经迁移过」。这里就照这个场景造一个空壳。
+      fs.mkdirSync(path.join(newDir, 'Cache'), { recursive: true });
+      fs.writeFileSync(path.join(newDir, 'Cache', 'junk'), 'cache', 'utf8');
+
       const migrated = ctx.migrateLegacyUserData({ appData: sandboxRoot, current: newDir, legacy: oldDir });
-      check('改名后自动迁移旧数据目录',
-        migrated.migrated === true && !fs.existsSync(oldDir)
+      check('改名后自动迁移旧数据目录（新目录已被 Electron 提前建好也要搬）',
+        migrated.migrated === true
         && fs.existsSync(path.join(newDir, 'config.json'))
         && fs.existsSync(path.join(newDir, 'Partitions', 'claude', 'Cookies')),
-        migrated.reason);
+        { reason: migrated.reason, moved: migrated.moved, copied: migrated.copied });
+      check('迁移后旧目录里不再留用户数据（避免下次又搬一遍）',
+        !fs.existsSync(path.join(oldDir, 'config.json'))
+        && !fs.existsSync(path.join(oldDir, 'Partitions')),
+        fs.existsSync(oldDir) ? fs.readdirSync(oldDir).join(',') : '(旧目录已不存在)');
 
-      // 新目录已经存在时不能覆盖（否则第二次启动会把新数据搬没了）
+      // 再跑一次必须是空操作
       const again = ctx.migrateLegacyUserData({ appData: sandboxRoot, current: newDir, legacy: oldDir });
-      check('旧目录不存在时迁移是空操作', again.migrated === false, again.reason);
+      check('已迁移过之后再启动是空操作', again.migrated === false, again.reason);
 
+      // 新目录里已经有用户数据时不能覆盖（否则第二次启动会把新数据搬没了）
       const sandbox2 = fs.mkdtempSync(path.join(os.tmpdir(), 'aihub-migrate2-'));
-      fs.mkdirSync(path.join(sandbox2, 'AI Multi Hub'), { recursive: true });
-      fs.mkdirSync(path.join(sandbox2, 'Aihub'), { recursive: true });
-      const conflict = ctx.migrateLegacyUserData({
-        appData: sandbox2,
-        current: path.join(sandbox2, 'Aihub'),
-        legacy: path.join(sandbox2, 'AI Multi Hub'),
-      });
-      check('新目录已存在时不覆盖、不迁移', conflict.migrated === false && /已存在/.test(conflict.reason), conflict.reason);
+      const old2 = path.join(sandbox2, 'AI Multi Hub');
+      const new2 = path.join(sandbox2, 'Aihub');
+      fs.mkdirSync(old2, { recursive: true });
+      fs.mkdirSync(new2, { recursive: true });
+      fs.writeFileSync(path.join(old2, 'config.json'), '{"from":"old"}', 'utf8');
+      fs.writeFileSync(path.join(new2, 'config.json'), '{"from":"new"}', 'utf8');
+      const conflict = ctx.migrateLegacyUserData({ appData: sandbox2, current: new2, legacy: old2 });
+      check('新目录已有用户数据时不覆盖、不迁移',
+        conflict.migrated === false && /已有用户数据/.test(conflict.reason)
+        && JSON.parse(fs.readFileSync(path.join(new2, 'config.json'), 'utf8')).from === 'new',
+        conflict.reason);
+
       for (const dir of [sandboxRoot, sandbox2]) {
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* 清理失败无所谓 */ }
       }
@@ -1292,11 +1307,20 @@ module.exports = function runSmoke(ctx) {
       await new Promise((resolve) => setTimeout(resolve, 600));
       const value = input.value;
       const overlayVisible = !document.getElementById('overlay').hidden;
+      const hintBeforeBlur = document.getElementById('hk-hint') ? document.getElementById('hk-hint').textContent : '';
+      const recordingBeforeBlur = input.classList.contains('recording');
       // 先失焦再读提示：「正在录制」时提示语是操作指引，失焦之后才显示设置结果
       input.blur();
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      const text = hint ? hint.textContent : '';
-      return { missing: false, before, value, hint: text, overlayVisible };
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      // 提示节点也重新查一次，避免读到被重建掉的旧节点
+      const hintNow = document.getElementById('hk-hint');
+      const text = hintNow ? hintNow.textContent : '';
+      return {
+        missing: false, before, value, hint: text, overlayVisible,
+        hintBeforeBlur, recordingBeforeBlur,
+        stillRecording: input.classList.contains('recording'),
+        activeEl: document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : '',
+      };
     })()`);
     check('快捷键：录制框在打开的面板里（不是藏在 hidden 里空按）',
       recorded.missing !== true && recorded.overlayVisible === true,
@@ -1305,7 +1329,7 @@ module.exports = function runSmoke(ctx) {
       recorded.missing !== true && recorded.value === 'Ctrl+Alt+F10'
       && ctx.getHotkey().accelerator === 'Ctrl+Alt+F10'
       && ctx.isHotkeyRegistered('Ctrl+Alt+F10'), recorded);
-    check('快捷键：面板上写明了「已生效」', /已生效/.test(recorded.hint || ''), recorded.hint);
+    check('快捷键：面板上写明了「已生效」', /已生效/.test(recorded.hint || ''), recorded);
 
     // 关闭面板（Esc 交给页面处理），顺便确认录制框没有把 Esc 吃掉
     win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });

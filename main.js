@@ -1404,6 +1404,11 @@ function isWindowForeground() {
 function pinWindow() {
   const win = mainWindow;
   if (!win || win.isDestroyed()) return;
+  // 刚唤出就是要置顶，之前那次失焦排队的「取消置顶」作废
+  if (pinReleaseTimer) {
+    clearTimeout(pinReleaseTimer);
+    pinReleaseTimer = null;
+  }
   try {
     win.setAlwaysOnTop(true, 'screen-saver', 1);
     pinnedByHotkey = true;
@@ -1424,6 +1429,34 @@ function releasePin(options) {
   } catch (err) {
     log('取消置顶失败（可忽略）:', err.message);
   }
+}
+
+let pinReleaseTimer = null;
+
+/**
+ * 窗口「刚失焦」时的处理：延迟 250ms 再放开置顶。
+ *
+ * 直接放开会有个很烦人的边缘情况：系统通知、输入法候选框、或者别的程序瞬间抢一下前台，
+ * 都会触发 blur，于是置顶被撤掉——用户明明还在用这个窗口，它却不再压着别的窗口了。
+ * 所以这里给一小段缓冲：这段时间内窗口重新拿到焦点就什么都不做。
+ */
+function scheduleReleasePin(options) {
+  const force = Boolean(options && options.force);
+  if (force) {
+    if (pinReleaseTimer) {
+      clearTimeout(pinReleaseTimer);
+      pinReleaseTimer = null;
+    }
+    releasePin({ force: true });
+    return;
+  }
+  if (pinReleaseTimer) clearTimeout(pinReleaseTimer);
+  pinReleaseTimer = setTimeout(() => {
+    pinReleaseTimer = null;
+    const win = mainWindow;
+    if (win && !win.isDestroyed() && win.isFocused()) return; // 又回来了，保持置顶
+    releasePin();
+  }, 250);
 }
 
 /** 把窗口拉到最前面并聚焦（窗口被销毁过就重新建一个） */
@@ -2630,10 +2663,11 @@ function createWindow() {
   mainWindow.on('enter-full-screen', layout);
   mainWindow.on('leave-full-screen', layout);
 
-  // 唤出时加的「最高优先级置顶」在窗口让出前台后自动取消，
+  // 唤出时加的「最高优先级置顶」在窗口真正让出前台后自动取消，
   // 否则它会长久压在别的窗口上，反而碍事。
-  mainWindow.on('blur', () => releasePin());
-  mainWindow.on('hide', () => releasePin({ force: true }));
+  // 用 scheduleReleasePin：瞬间的 blur（系统通知、输入法、别的程序抢一下前台）不算让出前台。
+  mainWindow.on('blur', () => scheduleReleasePin());
+  mainWindow.on('hide', () => scheduleReleasePin({ force: true }));
   for (const event of ['show', 'hide', 'minimize', 'restore']) {
     mainWindow.on(event, () => refreshTrayMenu());
   }
@@ -2665,34 +2699,93 @@ function createWindow() {
 /**
  * 老版本叫 "AI Multi Hub"，数据目录就是 %APPDATA%\AI Multi Hub；改名成 Aihub 之后
  * Electron 会改用 %APPDATA%\Aihub，登录态（Partitions/）、配置、缓存全都留在旧目录里。
- * 这里在新目录还不存在时，把旧目录整体改名过来（同盘 rename 是瞬间完成的）。
  *
- * 只在两边都存在/都不存在时跳过，失败也只在日志里报错——最坏情况也不过是重新登录一次，
- * 绝不能让启动失败。
+ * 坑：**不能只看「新目录是否存在」**。Electron 在跑主进程脚本之前就把 userData 目录建好了
+ * （里面只有一堆 Chromium 缓存壳子），所以旧写法永远判定成「新目录已存在」而跳过迁移，
+ * 结果就是改名之后所有站点都要重新登录。改成逐个条目搬，并且同盘优先用 rename（瞬间完成）：
+ *
+ *   · 新目录里已经存在同名条目（空壳缓存 / 已经用过新版本）→ 递归合并覆盖
+ *   · 新目录里还没有 → 直接 rename，同盘改名是瞬时的，不会卡启动
+ *
+ * 失败也只在日志里报错——最坏情况不过是重新登录一次，绝不能让启动失败。
  */
+const MIGRATE_ENTRIES = [
+  'config.json',        // 服务列表、分屏布局、主题、快捷键
+  'Partitions',         // 各服务的 Cookie / 本地存储（登录态）
+  'Local Storage',
+  'Session Storage',
+  'Network',
+  'Preferences',
+  'Local State',
+];
+
+/**
+ * 「这个目录已经被真正用过」的判据，只认 config.json。
+ *
+ * config.json 是本应用自己写的，第一次启动就会落盘；而 Electron 提前建好目录时只会放
+ * Chromium 那些缓存壳子（Cache / GPUCache / Preferences…），不会有它。
+ * 注意不能用「目录存在」判断——那正是上一版迁移失效的原因（Electron 先把目录建好了，
+ * 于是每次都被判定成「新目录已存在」而跳过，结果改名之后所有站点都要重新登录）。
+ */
+function isProfileInUse(dir) {
+  return fs.existsSync(path.join(dir, 'config.json'));
+}
+
+/** 旧目录里还有没有值得搬的东西（配置或登录态） */
+function hasLegacyData(dir) {
+  if (!fs.existsSync(dir)) return false;
+  if (fs.existsSync(path.join(dir, 'config.json'))) return true;
+  try {
+    const partitions = path.join(dir, 'Partitions');
+    return fs.existsSync(partitions) && fs.readdirSync(partitions).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function migrateLegacyUserData(options) {
   const appData = (options && options.appData) || app.getPath('appData');
   const current = (options && options.current) || app.getPath('userData');
   const legacy = (options && options.legacy) || path.join(appData, 'AI Multi Hub');
-  const result = { migrated: false, reason: '', from: legacy, to: current };
+  const result = { migrated: false, reason: '', from: legacy, to: current, moved: [], copied: [] };
 
   try {
     if (path.resolve(legacy) === path.resolve(current)) {
       result.reason = '新旧目录相同';
       return result;
     }
-    if (fs.existsSync(current)) {
-      result.reason = '新目录已存在，不覆盖';
+    if (!hasLegacyData(legacy)) {
+      result.reason = '旧目录没有用户数据';
       return result;
     }
-    if (!fs.existsSync(legacy)) {
-      result.reason = '没有旧目录';
+    if (isProfileInUse(current)) {
+      result.reason = '新目录已有用户数据，不覆盖';
       return result;
     }
-    fs.renameSync(legacy, current);
-    result.migrated = true;
-    result.reason = '已迁移';
-    log('已把旧数据目录迁移过来:', legacy, '->', current);
+
+    for (const entry of MIGRATE_ENTRIES) {
+      const from = path.join(legacy, entry);
+      if (!fs.existsSync(from)) continue;
+      const to = path.join(current, entry);
+      try {
+        if (!fs.existsSync(to)) {
+          fs.renameSync(from, to);
+          result.moved.push(entry);
+        } else {
+          fs.cpSync(from, to, { recursive: true, force: true });
+          result.copied.push(entry);
+        }
+      } catch (err) {
+        console.error(`[aihub] 迁移 ${entry} 失败（继续迁移其它条目）:`, err.message);
+      }
+    }
+
+    result.migrated = result.moved.length > 0 || result.copied.length > 0;
+    result.reason = result.migrated ? '已迁移' : '没有可迁移的条目';
+    if (result.migrated) {
+      log('已迁移旧数据目录内容:', legacy, '->', current,
+        '（直接改名:', result.moved.join(',') || '无', '；合并复制:', result.copied.join(',') || '无', '）');
+    }
   } catch (err) {
     result.reason = '迁移失败: ' + err.message;
     console.error('[aihub] 旧数据目录迁移失败（不影响启动）:', err.message);

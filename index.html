@@ -1569,6 +1569,9 @@
     if (recording) return;
     recording = true;
     hkKey.classList.add('recording');
+    // 真的把光标放进框里：否则「开始录制」和「结束录制（失焦）」不是一对，
+    // 点了框却没聚焦时按完组合键提示语会一直停在「按下要用的组合键」。
+    if (document.activeElement !== hkKey) hkKey.focus();
     renderHotkey();
   }
 
@@ -1577,6 +1580,18 @@
     recording = false;
     hkKey.classList.remove('recording');
     renderHotkey();
+  }
+
+  /**
+   * 录制收尾：主动退出录制态，再顺手取消聚焦。
+   *
+   * 不能只靠 hkKey.blur() 来结束录制——窗口不在前台时（用户刚在别的程序里点了东西、
+   * 或者窗口是被脚本唤起来的），元素级的 focus / blur 事件不一定派发，
+   * 那样提示语会一直停在「按下要用的组合键」，让人以为没录上。
+   */
+  function finishRecording() {
+    stopRecording();
+    if (document.activeElement === hkKey) hkKey.blur();
   }
 
   async function applyHotkey(patch) {
@@ -1606,7 +1621,7 @@
     const isFunctionKey = /^F([1-9]|1[0-9]|2[0-4])$/.test(key);
 
     if (key === 'Escape' && !hasMod) {
-      hkKey.blur();
+      finishRecording();
       return;
     }
     if (!key || !hasMod && !isFunctionKey) {
@@ -1619,7 +1634,11 @@
     }
     hkKey.value = acceleratorFromEvent(event);
     const res = await applyHotkey({ accelerator: hkKey.value });
-    if (res) toast('唤出快捷键已改为 ' + state.hotkey.accelerator);
+    if (res) {
+      toast('唤出快捷键已改为 ' + state.hotkey.accelerator);
+      // 录完就主动退出录制态：提示语要停在「已生效：Ctrl+Alt+F10」上
+      finishRecording();
+    }
   });
 
   $('hk-enabled').addEventListener('change', async (event) => {
