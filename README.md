@@ -1,4 +1,4 @@
-# Aihub
+<img width="2237" height="1550" alt="image" src="https://github.com/user-attachments/assets/fffe5945-fbd6-4e6c-a7f5-c262957c9cd8" /># Aihub
 
 [![CI](https://github.com/OpenX123/aihub/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenX123/aihub/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -19,9 +19,7 @@
 技术路线是「网页套壳」：不使用官方 API，直接嵌入各家网页，所以功能、界面永远和官网一致，
 也不需要自己维护模型适配。
 
-<img src="docs/screenshots/stage.png" alt="Aihub 主界面" width="720" />
-
-<img src="docs/screenshots/settings.png" alt="设置面板：服务管理 / 外观主题 / 全局快捷键 / 账号迁移" width="720" />
+<img width="2237" height="1550" alt="image" src="https://github.com/user-attachments/assets/d41b897d-a8af-4bc9-9881-bea3b2b0b1b5" />
 
 > 截图中间那片空白处是各家站点自己的网页（它们是独立的原生视图，截图只抓到了应用自己的界面层）。
 
