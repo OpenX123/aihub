@@ -1,0 +1,94 @@
+{
+  "name": "aihub",
+  "productName": "Aihub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "把常用的 AI 聊天网站聚合到一个窗口里：多标签 + 拖拽分屏，每个站点独立 session，登录态互不干扰。Windows 桌面客户端（Electron）",
+  "main": "main.js",
+  "author": "Aihub contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenX123/aihub.git"
+  },
+  "homepage": "https://github.com/OpenX123/aihub#readme",
+  "bugs": {
+    "url": "https://github.com/OpenX123/aihub/issues"
+  },
+  "keywords": [
+    "electron",
+    "ai",
+    "chatgpt",
+    "deepseek",
+    "claude",
+    "gemini",
+    "kimi",
+    "webview",
+    "multi-tab",
+    "desktop"
+  ],
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron .",
+    "icon": "electron tools/make-icon.js",
+    "icons": "node tools/build-icons.js",
+    "menu-icons": "electron tools/build-menu-icons.js",
+    "check:icons": "node tools/build-icons.js --check && electron tools/make-icon.js --check && node tools/build-menu-icons.js --check",
+    "check:package": "node tools/check-package.js",
+    "lint": "node --check main.js && node --check preload.js && node --check tools/smoke.js && node --check tools/build-icons.js && node --check tools/check-package.js",
+    "dist": "npm run icons && npm run menu-icons && electron-builder --win",
+    "dist:dir": "npm run icons && npm run menu-icons && electron-builder --win --dir"
+  },
+  "devDependencies": {
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "io.github.openx123.aihub",
+    "productName": "Aihub",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "error.html",
+      "icons.js",
+      "icons/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "compression": "normal",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Aihub",
+      "deleteAppDataOnUninstall": false
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    }
+  },
+  "allowScripts": {
+    "electron-winstaller": false
+  }
+}

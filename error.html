@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>加载失败</title>
+<style>
+  /* 跟随系统深浅色：这个页面在服务视图里显示，主进程的 themeSource 会决定 prefers-color-scheme */
+  :root {
+    --bg: #12141a;
+    --fg: #e6e9ef;
+    --fg-dim: #98a0b0;
+    --fg-faint: #6f7789;
+    --code-bg: #1c2029;
+    --code-fg: #b9c3d6;
+    --btn-bg: #232938;
+    --btn-border: #2c3242;
+    --accent: #4d6bfe;
+    --on-accent: #fff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #ffffff;
+      --fg: #1f2329;
+      --fg-dim: #6b7280;
+      --fg-faint: #8b93a1;
+      --code-bg: #eef0f4;
+      --code-fg: #3f4652;
+      --btn-bg: #eef0f4;
+      --btn-border: #d3d8e0;
+      --accent: #3b5bdb;
+    }
+  }
+  body {
+    margin: 0;
+    height: 100vh;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 14px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    text-align: center;
+    padding: 32px;
+  }
+  h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  p { margin: 0; color: var(--fg-dim); font-size: 13px; line-height: 1.8; max-width: 620px; }
+  code {
+    font-family: Consolas, "Courier New", monospace;
+    background: var(--code-bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--code-fg);
+    word-break: break-all;
+  }
+  .row { display: flex; gap: 10px; margin-top: 6px; }
+  button {
+    height: 34px;
+    padding: 0 18px;
+    border: 1px solid var(--btn-border);
+    border-radius: 8px;
+    background: var(--btn-bg);
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  button:hover { filter: brightness(1.12); }
+  .tips { margin-top: 18px; color: var(--fg-faint); font-size: 12px; text-align: left; }
+  .tips li { margin: 4px 0; }
+</style>
+</head>
+<body>
+  <h1 id="title">页面加载失败</h1>
+  <p id="line1"></p>
+  <p id="line2"></p>
+  <div class="row">
+    <button class="primary" id="retry">重试</button>
+    <button id="home">回到首页</button>
+    <button id="reload">重新加载</button>
+  </div>
+  <div class="tips">
+    <div>排查建议：</div>
+    <ul>
+      <li>确认本机网络可以正常访问该站点（可能需要代理）。</li>
+      <li>若提示证书 / 连接被重置，多半是网络环境问题，不是客户端缺陷。</li>
+      <li>按 F12 打开开发者工具可看到更详细的错误。</li>
+    </ul>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+  var params = new URLSearchParams(location.search);
+  var name = params.get('name') || '该服务';
+  var target = params.get('url') || '';
+  var code = params.get('code') || '';
+  var desc = params.get('desc') || '';
+
+  document.title = name + ' · 加载失败';
+  document.getElementById('title').textContent = '「' + name + '」加载失败';
+  document.getElementById('line1').innerHTML =
+    '错误：<code>' + (desc || '未知') + (code ? ' (' + code + ')' : '') + '</code>';
+  document.getElementById('line2').innerHTML = target ? '地址：<code>' + target + '</code>' : '';
+
+  function go(url) {
+    if (url) location.replace(url);
+  }
+  document.getElementById('retry').addEventListener('click', function () { go(target); });
+  document.getElementById('home').addEventListener('click', function () {
+    try { go(new URL(target).origin); } catch (e) { go(target); }
+  });
+  document.getElementById('reload').addEventListener('click', function () { location.reload(); });
+})();
+</script>
+</body>
+</html>

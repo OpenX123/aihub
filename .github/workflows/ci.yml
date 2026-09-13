@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# 只跑不依赖网络的检查：语法、图标素材是否和图标表对得上。
+# 完整的功能自检（tools/smoke.js，会真的打开窗口加载各家站点）留在本地跑，见 README。
+jobs:
+  checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 语法检查
+        run: npm run lint
+
+      - name: 校验图标素材（图标表 / 深浅变体 / 打包白名单）
+        run: npm run check:icons

@@ -1,0 +1,1944 @@
+{
+  "source": "https://github.com/farion1231/cc-switch",
+  "license": "MIT",
+  "count": 116,
+  "items": [
+    {
+      "key": "9527code",
+      "displayName": "9527CODE",
+      "category": "ai-provider",
+      "defaultColor": "currentColor",
+      "keywords": [
+        "9527",
+        "codes",
+        "aggregator",
+        "relay",
+        "gateway"
+      ],
+      "file": "logos/9527code.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "a6api",
+      "displayName": "A6API",
+      "category": "ai-provider",
+      "defaultColor": "#3B82F6",
+      "keywords": [
+        "a6",
+        "aggregator",
+        "relay",
+        "gateway",
+        "claude"
+      ],
+      "file": "logos/a6api.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "A6API",
+      "domestic": false
+    },
+    {
+      "key": "aicodemirror",
+      "displayName": "aicodemirror",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/aicodemirror.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/aicodemirror.svg"
+      ],
+      "cnName": "AICodeMirror",
+      "domestic": false
+    },
+    {
+      "key": "aicodewith",
+      "displayName": "AICodeWith",
+      "category": "ai-provider",
+      "defaultColor": "#3A3B40",
+      "keywords": [
+        "ai code with",
+        "aggregator",
+        "relay",
+        "gateway",
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "file": "logos/aicodewith.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "AICodeWith",
+      "domestic": false
+    },
+    {
+      "key": "aicoding",
+      "displayName": "aicoding",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/aicoding.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/aicoding.svg"
+      ],
+      "cnName": "AICoding",
+      "domestic": true
+    },
+    {
+      "key": "aigocode",
+      "displayName": "AIGoCode",
+      "category": "ai-provider",
+      "defaultColor": "#5B7FFF",
+      "keywords": [
+        "aigo",
+        "code",
+        "third-party"
+      ],
+      "file": "logos/aigocode.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "AiGoCode",
+      "domestic": true
+    },
+    {
+      "key": "aihubmix",
+      "displayName": "AiHubMix",
+      "category": "ai-provider",
+      "defaultColor": "#006FFB",
+      "keywords": [
+        "hub",
+        "mix",
+        "aggregator"
+      ],
+      "file": "logos/aihubmix.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "AiHubMix",
+      "domestic": true
+    },
+    {
+      "key": "aihubmix-color",
+      "displayName": "aihubmix-color",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/aihubmix-color.svg",
+      "kind": "file",
+      "source": "convention",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "algocode",
+      "displayName": "algocode",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/algocode.svg",
+      "kind": "file",
+      "source": "convention",
+      "alternates": [],
+      "cnName": "AlgoCode",
+      "domestic": false
+    },
+    {
+      "key": "alibaba",
+      "displayName": "Alibaba",
+      "category": "ai-provider",
+      "defaultColor": "#FF6A00",
+      "keywords": [
+        "qwen",
+        "tongyi"
+      ],
+      "file": "logos/alibaba.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/alibaba.svg"
+      ],
+      "cnName": "阿里巴巴 / 阿里云",
+      "domestic": true
+    },
+    {
+      "key": "amux",
+      "displayName": "Amux",
+      "category": "ai-provider",
+      "defaultColor": "#000000",
+      "keywords": [
+        "amuxapi",
+        "aggregator",
+        "relay",
+        "gateway",
+        "gpt"
+      ],
+      "file": "logos/amux.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "Amux",
+      "domestic": false
+    },
+    {
+      "key": "amuxapi-icon",
+      "displayName": "amuxapi-icon",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/amuxapi-icon.svg",
+      "kind": "file",
+      "source": "convention",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "anthropic",
+      "displayName": "Anthropic",
+      "category": "ai-provider",
+      "defaultColor": "#D4915D",
+      "keywords": [
+        "claude"
+      ],
+      "file": "logos/anthropic.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/anthropic.svg"
+      ],
+      "cnName": "Anthropic",
+      "domestic": false
+    },
+    {
+      "key": "apikeyfun",
+      "displayName": "APIKEY.FUN",
+      "category": "ai-provider",
+      "defaultColor": "#9C3F00",
+      "keywords": [
+        "api key",
+        "gateway",
+        "relay",
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "file": "logos/apikeyfun.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "APIKEY.FUN",
+      "domestic": false
+    },
+    {
+      "key": "apinebula",
+      "displayName": "APINebula",
+      "category": "ai-provider",
+      "defaultColor": "#C86F49",
+      "keywords": [
+        "api nebula",
+        "gateway",
+        "relay",
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "file": "logos/apinebula.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "APINebula 星云",
+      "domestic": true
+    },
+    {
+      "key": "atlascloud",
+      "displayName": "AtlasCloud",
+      "category": "ai-provider",
+      "defaultColor": "#111111",
+      "keywords": [
+        "atlas cloud",
+        "coding plan",
+        "openai",
+        "anthropic",
+        "codex",
+        "claude"
+      ],
+      "file": "logos/atlascloud.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "AtlasCloud",
+      "domestic": false
+    },
+    {
+      "key": "aws",
+      "displayName": "AWS",
+      "category": "cloud",
+      "defaultColor": "#FF9900",
+      "keywords": [
+        "amazon"
+      ],
+      "file": "logos/aws.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/aws.svg"
+      ],
+      "cnName": "AWS",
+      "domestic": false
+    },
+    {
+      "key": "azure",
+      "displayName": "Azure",
+      "category": "cloud",
+      "defaultColor": "#0078D4",
+      "keywords": [
+        "microsoft"
+      ],
+      "file": "logos/azure.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/azure.svg"
+      ],
+      "cnName": "Azure",
+      "domestic": false
+    },
+    {
+      "key": "baidu",
+      "displayName": "Baidu",
+      "category": "ai-provider",
+      "defaultColor": "#2932E1",
+      "keywords": [
+        "ernie",
+        "wenxin"
+      ],
+      "file": "logos/baidu.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/baidu.svg"
+      ],
+      "cnName": "百度",
+      "domestic": true
+    },
+    {
+      "key": "bailian",
+      "displayName": "Bailian",
+      "category": "ai-provider",
+      "defaultColor": "#624AFF",
+      "keywords": [
+        "dashscope",
+        "aliyun",
+        "alibaba"
+      ],
+      "file": "logos/bailian.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/bailian.svg"
+      ],
+      "cnName": "阿里云百炼",
+      "domestic": true
+    },
+    {
+      "key": "bytedance",
+      "displayName": "bytedance",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/bytedance.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/bytedance.svg"
+      ],
+      "cnName": "字节跳动",
+      "domestic": true
+    },
+    {
+      "key": "byteplus",
+      "displayName": "BytePlus",
+      "category": "ai-provider",
+      "defaultColor": "#3370FF",
+      "keywords": [
+        "volcengine",
+        "ark",
+        "modelark"
+      ],
+      "file": "logos/byteplus.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "BytePlus 字节跳动海外",
+      "domestic": true
+    },
+    {
+      "key": "catcoder",
+      "displayName": "catcoder",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/catcoder.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/catcoder.svg"
+      ],
+      "cnName": "CatCoder",
+      "domestic": false
+    },
+    {
+      "key": "ccsub",
+      "displayName": "CCSub",
+      "category": "ai-provider",
+      "defaultColor": "#1E88E5",
+      "keywords": [
+        "aggregator",
+        "relay",
+        "claude",
+        "codex",
+        "gateway"
+      ],
+      "file": "logos/ccsub.svg",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "CCSub",
+      "domestic": false
+    },
+    {
+      "key": "chatglm",
+      "displayName": "chatglm",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/chatglm.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/chatglm.svg"
+      ],
+      "cnName": "智谱 GLM",
+      "domestic": true
+    },
+    {
+      "key": "chatgpt",
+      "displayName": "chatgpt",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/chatgpt.svg",
+      "kind": "file",
+      "source": "assets-icons",
+      "alternates": [],
+      "cnName": "ChatGPT",
+      "domestic": false
+    },
+    {
+      "key": "cherryin",
+      "displayName": "CherryIN",
+      "category": "ai-provider",
+      "defaultColor": "#FB6354",
+      "keywords": [
+        "cherry",
+        "gateway",
+        "relay",
+        "newapi",
+        "claude",
+        "codex"
+      ],
+      "file": "logos/cherryin.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "CherryIn",
+      "domestic": false
+    },
+    {
+      "key": "claude",
+      "displayName": "Claude",
+      "category": "ai-provider",
+      "defaultColor": "#D4915D",
+      "keywords": [
+        "anthropic"
+      ],
+      "file": "logos/claude.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/claude.svg"
+      ],
+      "cnName": "Claude",
+      "domestic": false
+    },
+    {
+      "key": "claudeapi",
+      "displayName": "ClaudeAPI",
+      "category": "ai-provider",
+      "defaultColor": "",
+      "keywords": [
+        "claude",
+        "anthropic",
+        "bedrock"
+      ],
+      "file": "logos/claudeapi.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "Claude API 中转",
+      "domestic": false
+    },
+    {
+      "key": "claudecn",
+      "displayName": "ClaudeCN",
+      "category": "ai-provider",
+      "defaultColor": "",
+      "keywords": [
+        "claude",
+        "enterprise"
+      ],
+      "file": "logos/claudecn.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "Claude 国内中转",
+      "domestic": true
+    },
+    {
+      "key": "claw",
+      "displayName": "claw",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/claw.svg",
+      "kind": "file",
+      "source": "convention",
+      "alternates": [],
+      "cnName": "Claw",
+      "domestic": false
+    },
+    {
+      "key": "cloudflare",
+      "displayName": "Cloudflare",
+      "category": "cloud",
+      "defaultColor": "#F38020",
+      "keywords": [
+        "cdn"
+      ],
+      "file": "logos/cloudflare.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/cloudflare.svg"
+      ],
+      "cnName": "Cloudflare",
+      "domestic": false
+    },
+    {
+      "key": "code0",
+      "displayName": "Code0",
+      "category": "ai-provider",
+      "defaultColor": "#20C050",
+      "keywords": [
+        "code0ai",
+        "aggregator",
+        "relay",
+        "gateway",
+        "gpt"
+      ],
+      "file": "logos/code0.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "Code0",
+      "domestic": false
+    },
+    {
+      "key": "cohere",
+      "displayName": "Cohere",
+      "category": "ai-provider",
+      "defaultColor": "#39594D",
+      "keywords": [],
+      "file": "logos/cohere.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/cohere.svg"
+      ],
+      "cnName": "Cohere",
+      "domestic": false
+    },
+    {
+      "key": "copilot",
+      "displayName": "copilot",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/copilot.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/copilot.svg"
+      ],
+      "cnName": "Copilot",
+      "domestic": false
+    },
+    {
+      "key": "crazyrouter",
+      "displayName": "crazyrouter",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/crazyrouter.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/crazyrouter.svg"
+      ],
+      "cnName": "CrazyRouter",
+      "domestic": false
+    },
+    {
+      "key": "cubence",
+      "displayName": "Cubence",
+      "category": "ai-provider",
+      "defaultColor": "#4B5563",
+      "keywords": [
+        "api",
+        "relay"
+      ],
+      "file": "logos/cubence.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/cubence.svg"
+      ],
+      "cnName": "Cubence",
+      "domestic": false
+    },
+    {
+      "key": "deepseek",
+      "displayName": "DeepSeek",
+      "category": "ai-provider",
+      "defaultColor": "#1E88E5",
+      "keywords": [
+        "deep",
+        "seek"
+      ],
+      "file": "logos/deepseek.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/deepseek.svg"
+      ],
+      "cnName": "DeepSeek 深度求索",
+      "domestic": true
+    },
+    {
+      "key": "doubao",
+      "displayName": "doubao",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/doubao.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/doubao.svg"
+      ],
+      "cnName": "豆包 字节跳动",
+      "domestic": true
+    },
+    {
+      "key": "eflowcode",
+      "displayName": "E-FlowCode",
+      "category": "ai-provider",
+      "defaultColor": "currentColor",
+      "keywords": [
+        "e-flowcode",
+        "flow"
+      ],
+      "file": "logos/eflowcode.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "EFlowCode",
+      "domestic": false
+    },
+    {
+      "key": "etok",
+      "displayName": "ETok",
+      "category": "ai-provider",
+      "defaultColor": "#F97316",
+      "keywords": [
+        "ai",
+        "programming"
+      ],
+      "file": "logos/etok.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "Etok",
+      "domestic": false
+    },
+    {
+      "key": "fenno",
+      "displayName": "FennoAI",
+      "category": "ai-provider",
+      "defaultColor": "#000000",
+      "keywords": [
+        "fennoai",
+        "aggregator",
+        "relay",
+        "claude",
+        "codex",
+        "gpt",
+        "gateway"
+      ],
+      "file": "logos/fenno.webp",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "Fenno",
+      "domestic": false
+    },
+    {
+      "key": "gemini",
+      "displayName": "Gemini",
+      "category": "ai-provider",
+      "defaultColor": "#4285F4",
+      "keywords": [
+        "google"
+      ],
+      "file": "logos/gemini.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/gemini.svg"
+      ],
+      "cnName": "Google Gemini",
+      "domestic": false
+    },
+    {
+      "key": "gemma",
+      "displayName": "gemma",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/gemma.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/gemma.svg"
+      ],
+      "cnName": "Google Gemma",
+      "domestic": false
+    },
+    {
+      "key": "github",
+      "displayName": "GitHub",
+      "category": "tool",
+      "defaultColor": "#181717",
+      "keywords": [
+        "git",
+        "version control"
+      ],
+      "file": "logos/github.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/github.svg"
+      ],
+      "cnName": "GitHub",
+      "domestic": false
+    },
+    {
+      "key": "githubcopilot",
+      "displayName": "githubcopilot",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/githubcopilot.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/githubcopilot.svg"
+      ],
+      "cnName": "GitHub Copilot",
+      "domestic": false
+    },
+    {
+      "key": "google",
+      "displayName": "Google",
+      "category": "ai-provider",
+      "defaultColor": "#4285F4",
+      "keywords": [
+        "gemini",
+        "bard"
+      ],
+      "file": "logos/google.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/google.svg"
+      ],
+      "cnName": "Google",
+      "domestic": false
+    },
+    {
+      "key": "googlecloud",
+      "displayName": "googlecloud",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/googlecloud.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/googlecloud.svg"
+      ],
+      "cnName": "Google Cloud",
+      "domestic": false
+    },
+    {
+      "key": "grok",
+      "displayName": "grok",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/grok.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/grok.svg"
+      ],
+      "cnName": "xAI Grok",
+      "domestic": false
+    },
+    {
+      "key": "hermes",
+      "displayName": "Hermes",
+      "category": "ai-provider",
+      "defaultColor": "#000000",
+      "keywords": [
+        "agent",
+        "nous",
+        "nousresearch"
+      ],
+      "file": "logos/hermes.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "Hermes",
+      "domestic": false
+    },
+    {
+      "key": "huawei",
+      "displayName": "Huawei",
+      "category": "cloud",
+      "defaultColor": "#FF0000",
+      "keywords": [],
+      "file": "logos/huawei.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/huawei.svg"
+      ],
+      "cnName": "华为",
+      "domestic": true
+    },
+    {
+      "key": "huggingface",
+      "displayName": "Hugging Face",
+      "category": "ai-provider",
+      "defaultColor": "#FFD21E",
+      "keywords": [
+        "hf"
+      ],
+      "file": "logos/huggingface.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/huggingface.svg"
+      ],
+      "cnName": "Hugging Face",
+      "domestic": false
+    },
+    {
+      "key": "hunyuan",
+      "displayName": "hunyuan",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/hunyuan.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/hunyuan.svg"
+      ],
+      "cnName": "腾讯混元",
+      "domestic": true
+    },
+    {
+      "key": "huoshan",
+      "displayName": "火山方舟",
+      "category": "ai-provider",
+      "defaultColor": "#3370FF",
+      "keywords": [
+        "volcengine",
+        "ark",
+        "agentplan",
+        "byteplus"
+      ],
+      "file": "logos/huoshan.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "火山引擎",
+      "domestic": true
+    },
+    {
+      "key": "jiekou",
+      "displayName": "JieKou AI",
+      "category": "ai-provider",
+      "defaultColor": "#000000",
+      "keywords": [
+        "jiekou ai",
+        "interface ai",
+        "aggregator"
+      ],
+      "file": "logos/jiekou.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "kimi",
+      "displayName": "Kimi",
+      "category": "ai-provider",
+      "defaultColor": "#1783FF",
+      "keywords": [
+        "moonshot"
+      ],
+      "file": "logos/kimi.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/kimi.svg"
+      ],
+      "cnName": "Kimi 月之暗面",
+      "domestic": true
+    },
+    {
+      "key": "lioncc",
+      "displayName": "LionCC",
+      "category": "ai-provider",
+      "defaultColor": "#F9DA3C",
+      "keywords": [
+        "lion"
+      ],
+      "file": "logos/lioncc.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/lioncc.svg"
+      ],
+      "cnName": "LionCC",
+      "domestic": false
+    },
+    {
+      "key": "longcat",
+      "displayName": "LongCat",
+      "category": "ai-provider",
+      "defaultColor": "#29E154",
+      "keywords": [
+        "long",
+        "cat"
+      ],
+      "file": "logos/longcat.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "美团 LongCat",
+      "domestic": true
+    },
+    {
+      "key": "longcat-color",
+      "displayName": "longcat-color",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/longcat-color.svg",
+      "kind": "file",
+      "source": "convention",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "mcp",
+      "displayName": "mcp",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/mcp.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/mcp.svg"
+      ],
+      "cnName": "MCP 协议",
+      "domestic": false
+    },
+    {
+      "key": "meta",
+      "displayName": "Meta",
+      "category": "ai-provider",
+      "defaultColor": "#0081FB",
+      "keywords": [
+        "facebook",
+        "llama"
+      ],
+      "file": "logos/meta.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/meta.svg"
+      ],
+      "cnName": "Meta Llama",
+      "domestic": false
+    },
+    {
+      "key": "micu",
+      "displayName": "micu",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/micu.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/micu.svg"
+      ],
+      "cnName": "MiCu",
+      "domestic": false
+    },
+    {
+      "key": "midjourney",
+      "displayName": "midjourney",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/midjourney.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/midjourney.svg"
+      ],
+      "cnName": "Midjourney",
+      "domestic": false
+    },
+    {
+      "key": "minimax",
+      "displayName": "MiniMax",
+      "category": "ai-provider",
+      "defaultColor": "#FF6B6B",
+      "keywords": [],
+      "file": "logos/minimax.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/minimax.svg"
+      ],
+      "cnName": "MiniMax 稀宇科技",
+      "domestic": true
+    },
+    {
+      "key": "mistral",
+      "displayName": "Mistral",
+      "category": "ai-provider",
+      "defaultColor": "#FF7000",
+      "keywords": [],
+      "file": "logos/mistral.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/mistral.svg"
+      ],
+      "cnName": "Mistral",
+      "domestic": false
+    },
+    {
+      "key": "modelscope",
+      "displayName": "ModelScope",
+      "category": "ai-provider",
+      "defaultColor": "#624AFF",
+      "keywords": [
+        "alibaba",
+        "scope"
+      ],
+      "file": "logos/modelscope.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "魔搭 ModelScope",
+      "domestic": true
+    },
+    {
+      "key": "modelscope-color",
+      "displayName": "modelscope-color",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/modelscope-color.svg",
+      "kind": "file",
+      "source": "convention",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "nekocode",
+      "displayName": "NekoCode",
+      "category": "ai-provider",
+      "defaultColor": "#A64BC4",
+      "keywords": [
+        "neko",
+        "aggregator",
+        "relay",
+        "gateway",
+        "gpt"
+      ],
+      "file": "logos/nekocode.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "NekoCode",
+      "domestic": false
+    },
+    {
+      "key": "newapi",
+      "displayName": "newapi",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/newapi.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/newapi.svg"
+      ],
+      "cnName": "New API",
+      "domestic": true
+    },
+    {
+      "key": "notion",
+      "displayName": "notion",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/notion.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/notion.svg"
+      ],
+      "cnName": "Notion",
+      "domestic": false
+    },
+    {
+      "key": "novita",
+      "displayName": "Novita AI",
+      "category": "ai-provider",
+      "defaultColor": "#000000",
+      "keywords": [
+        "novita ai"
+      ],
+      "file": "logos/novita.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/novita.svg"
+      ],
+      "cnName": "Novita AI",
+      "domestic": false
+    },
+    {
+      "key": "nvidia",
+      "displayName": "NVIDIA",
+      "category": "ai-provider",
+      "defaultColor": "#74B71B",
+      "keywords": [
+        "nim",
+        "gpu"
+      ],
+      "file": "logos/nvidia.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/nvidia.svg"
+      ],
+      "cnName": "NVIDIA",
+      "domestic": false
+    },
+    {
+      "key": "ollama",
+      "displayName": "ollama",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/ollama.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/ollama.svg"
+      ],
+      "cnName": "Ollama",
+      "domestic": false
+    },
+    {
+      "key": "openai",
+      "displayName": "OpenAI",
+      "category": "ai-provider",
+      "defaultColor": "currentColor",
+      "keywords": [
+        "gpt",
+        "chatgpt"
+      ],
+      "file": "logos/openai.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/openai.svg"
+      ],
+      "cnName": "OpenAI",
+      "domestic": false
+    },
+    {
+      "key": "openclaw",
+      "displayName": "OpenClaw",
+      "category": "ai-provider",
+      "defaultColor": "#ff4f40",
+      "keywords": [
+        "lobster",
+        "claw"
+      ],
+      "file": "logos/openclaw.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "opencode",
+      "displayName": "opencode",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/opencode.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "OpenCode",
+      "domestic": false
+    },
+    {
+      "key": "opencode-logo-light",
+      "displayName": "opencode-logo-light",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/opencode-logo-light.svg",
+      "kind": "file",
+      "source": "convention",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "openrouter",
+      "displayName": "OpenRouter",
+      "category": "ai-provider",
+      "defaultColor": "#6566F1",
+      "keywords": [
+        "router",
+        "aggregator"
+      ],
+      "file": "logos/openrouter.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/openrouter.svg"
+      ],
+      "cnName": "OpenRouter",
+      "domestic": false
+    },
+    {
+      "key": "packycode",
+      "displayName": "PackyCode",
+      "category": "ai-provider",
+      "defaultColor": "currentColor",
+      "keywords": [
+        "packy",
+        "packyapi"
+      ],
+      "file": "logos/packycode.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/packycode.svg"
+      ],
+      "cnName": "PackyCode",
+      "domestic": true
+    },
+    {
+      "key": "palm",
+      "displayName": "palm",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/palm.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/palm.svg"
+      ],
+      "cnName": "Google PaLM",
+      "domestic": false
+    },
+    {
+      "key": "pateway",
+      "displayName": "PatewayAI",
+      "category": "ai-provider",
+      "defaultColor": "",
+      "keywords": [
+        "patewayai",
+        "claude",
+        "codex"
+      ],
+      "file": "logos/pateway.jpg",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "Pateway",
+      "domestic": false
+    },
+    {
+      "key": "perplexity",
+      "displayName": "Perplexity",
+      "category": "ai-provider",
+      "defaultColor": "#20808D",
+      "keywords": [],
+      "file": "logos/perplexity.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/perplexity.svg"
+      ],
+      "cnName": "Perplexity",
+      "domestic": false
+    },
+    {
+      "key": "pi",
+      "displayName": "pi",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/pi.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "pipellm",
+      "displayName": "PIPELLM",
+      "category": "ai-provider",
+      "defaultColor": "currentColor",
+      "keywords": [
+        "pipe"
+      ],
+      "file": "logos/pipellm.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "PipeLLM",
+      "domestic": false
+    },
+    {
+      "key": "ppio",
+      "displayName": "PPIO",
+      "category": "ai-provider",
+      "defaultColor": "#2874FF",
+      "keywords": [
+        "派欧云"
+      ],
+      "file": "logos/ppio.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/ppio.svg"
+      ],
+      "cnName": "PPIO 派欧云",
+      "domestic": true
+    },
+    {
+      "key": "qianwenai",
+      "displayName": "千问AI平台",
+      "category": "ai-provider",
+      "defaultColor": "#624AFF",
+      "keywords": [
+        "qianwen",
+        "qwen",
+        "aliyun",
+        "alibaba"
+      ],
+      "file": "logos/qianwenai.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/qianwenai.svg"
+      ],
+      "cnName": "通义千问",
+      "domestic": true
+    },
+    {
+      "key": "qiniu",
+      "displayName": "七牛云",
+      "category": "ai-provider",
+      "defaultColor": "#00AAE7",
+      "keywords": [
+        "qnaigc",
+        "modelink",
+        "aggregator",
+        "relay",
+        "claude",
+        "codex",
+        "gpt",
+        "gemini",
+        "gateway"
+      ],
+      "file": "logos/qiniu.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "七牛云",
+      "domestic": true
+    },
+    {
+      "key": "qwen",
+      "displayName": "qwen",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/qwen.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/qwen.svg"
+      ],
+      "cnName": "通义千问 阿里",
+      "domestic": true
+    },
+    {
+      "key": "qwencloud",
+      "displayName": "QwenCloud",
+      "category": "ai-provider",
+      "defaultColor": "#6336E7",
+      "keywords": [
+        "qwen",
+        "aliyun",
+        "alibaba"
+      ],
+      "file": "logos/qwencloud.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/qwencloud.svg"
+      ],
+      "cnName": "通义云",
+      "domestic": true
+    },
+    {
+      "key": "rc",
+      "displayName": "rc",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/rc.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/rc.svg"
+      ],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "relaxcode",
+      "displayName": "RelaxyCode",
+      "category": "ai-provider",
+      "defaultColor": "",
+      "keywords": [
+        "relaxycode",
+        "relax"
+      ],
+      "file": "logos/relaxcode.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "RelaxCode",
+      "domestic": false
+    },
+    {
+      "key": "runapi",
+      "displayName": "RunAPI",
+      "category": "ai-provider",
+      "defaultColor": "",
+      "keywords": [
+        "run",
+        "aggregator",
+        "gateway"
+      ],
+      "file": "logos/runapi.jpg",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "RunAPI",
+      "domestic": true
+    },
+    {
+      "key": "shengsuanyun",
+      "displayName": "Shengsuanyun",
+      "category": "ai-provider",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/shengsuanyun.svg",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "胜算云",
+      "domestic": true
+    },
+    {
+      "key": "siliconflow",
+      "displayName": "siliconflow",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/siliconflow.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/siliconflow.svg"
+      ],
+      "cnName": "硅基流动",
+      "domestic": true
+    },
+    {
+      "key": "soleapi",
+      "displayName": "SoleAPI",
+      "category": "ai-provider",
+      "defaultColor": "currentColor",
+      "keywords": [
+        "sole",
+        "aggregator",
+        "relay",
+        "gateway",
+        "claude"
+      ],
+      "file": "logos/soleapi.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "sssaicode",
+      "displayName": "sssaicode",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/sssaicode.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/sssaicode.svg"
+      ],
+      "cnName": "SSSAICode",
+      "domestic": false
+    },
+    {
+      "key": "stability",
+      "displayName": "stability",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/stability.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/stability.svg"
+      ],
+      "cnName": "Stability AI",
+      "domestic": false
+    },
+    {
+      "key": "stepfun",
+      "displayName": "StepFun",
+      "category": "ai-provider",
+      "defaultColor": "#005AFF",
+      "keywords": [
+        "step",
+        "jieyue",
+        "阶跃星辰"
+      ],
+      "file": "logos/stepfun.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/stepfun.svg"
+      ],
+      "cnName": "阶跃星辰",
+      "domestic": true
+    },
+    {
+      "key": "subrouter",
+      "displayName": "SubRouter",
+      "category": "ai-provider",
+      "defaultColor": "#0D9488",
+      "keywords": [
+        "subrouter.ai",
+        "aggregator",
+        "relay",
+        "claude",
+        "codex",
+        "gemini",
+        "gateway"
+      ],
+      "file": "logos/subrouter.svg",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "SubRouter",
+      "domestic": false
+    },
+    {
+      "key": "sudocode",
+      "displayName": "SudoCode.chat",
+      "category": "ai-provider",
+      "defaultColor": "#111111",
+      "keywords": [
+        "sudo code",
+        "chat",
+        "gateway",
+        "relay",
+        "claude",
+        "codex",
+        "gemini",
+        "openclaw"
+      ],
+      "file": "logos/sudocode.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "SudoCode",
+      "domestic": true
+    },
+    {
+      "key": "sudocode-us",
+      "displayName": "SudoCode.us",
+      "category": "ai-provider",
+      "defaultColor": "#111111",
+      "keywords": [
+        "sudocode",
+        "sudo code",
+        "us",
+        "gateway",
+        "relay",
+        "claude",
+        "codex",
+        "gemini",
+        "openclaw"
+      ],
+      "file": "logos/sudocode-us.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "teamorouter",
+      "displayName": "TeamoRouter",
+      "category": "ai-provider",
+      "defaultColor": "#000000",
+      "keywords": [
+        "teamo",
+        "router",
+        "aggregator",
+        "relay",
+        "gateway",
+        "gpt"
+      ],
+      "file": "logos/teamorouter.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "TeamoRouter",
+      "domestic": false
+    },
+    {
+      "key": "tencent",
+      "displayName": "Tencent",
+      "category": "ai-provider",
+      "defaultColor": "#00A4FF",
+      "keywords": [
+        "hunyuan"
+      ],
+      "file": "logos/tencent.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/tencent.svg"
+      ],
+      "cnName": "腾讯",
+      "domestic": true
+    },
+    {
+      "key": "ucloud",
+      "displayName": "ucloud",
+      "category": "",
+      "defaultColor": "",
+      "keywords": [],
+      "file": "logos/ucloud.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/ucloud.svg"
+      ],
+      "cnName": "UCloud 优刻得",
+      "domestic": true
+    },
+    {
+      "key": "unity2",
+      "displayName": "Unity2.ai",
+      "category": "ai-provider",
+      "defaultColor": "#000000",
+      "keywords": [
+        "aggregator",
+        "relay",
+        "claude",
+        "codex",
+        "gateway"
+      ],
+      "file": "logos/unity2.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "Unity2",
+      "domestic": false
+    },
+    {
+      "key": "vercel",
+      "displayName": "vercel",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/vercel.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/vercel.svg"
+      ],
+      "cnName": "Vercel",
+      "domestic": false
+    },
+    {
+      "key": "wenxin",
+      "displayName": "wenxin",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/wenxin.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/wenxin.svg"
+      ],
+      "cnName": "文心一言 百度",
+      "domestic": true
+    },
+    {
+      "key": "xai",
+      "displayName": "xai",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/xai.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/xai.svg"
+      ],
+      "cnName": "xAI",
+      "domestic": false
+    },
+    {
+      "key": "xiaomimimo",
+      "displayName": "Xiaomi MiMo",
+      "category": "ai-provider",
+      "defaultColor": "#000000",
+      "keywords": [
+        "xiaomi",
+        "mimo"
+      ],
+      "file": "logos/xiaomimimo.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/xiaomimimo.svg"
+      ],
+      "cnName": "小米 MiMo",
+      "domestic": true
+    },
+    {
+      "key": "xycai",
+      "displayName": "XycAi",
+      "category": "ai-provider",
+      "defaultColor": "#1E88E5",
+      "keywords": [
+        "xyc",
+        "aggregator",
+        "relay",
+        "gateway",
+        "token"
+      ],
+      "file": "logos/xycai.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "小云雀 AI",
+      "domestic": true
+    },
+    {
+      "key": "yi",
+      "displayName": "yi",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/yi.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/yi.svg"
+      ],
+      "cnName": "零一万物",
+      "domestic": true
+    },
+    {
+      "key": "zenmux",
+      "displayName": "ZenMux",
+      "category": "ai-provider",
+      "defaultColor": "#6366F1",
+      "keywords": [
+        "zen",
+        "mux"
+      ],
+      "file": "logos/zenmux.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [],
+      "cnName": "",
+      "domestic": false
+    },
+    {
+      "key": "zeroone",
+      "displayName": "zeroone",
+      "category": "other",
+      "defaultColor": "currentColor",
+      "keywords": [],
+      "file": "logos/zeroone.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/zeroone.svg"
+      ],
+      "cnName": "零一万物",
+      "domestic": true
+    },
+    {
+      "key": "zetaapi",
+      "displayName": "ZetaAPI",
+      "category": "ai-provider",
+      "defaultColor": "#000000",
+      "keywords": [
+        "zeta",
+        "aggregator",
+        "relay",
+        "claude",
+        "gpt",
+        "gateway"
+      ],
+      "file": "logos/zetaapi.png",
+      "kind": "file",
+      "source": "registry",
+      "alternates": [],
+      "cnName": "ZetaAPI",
+      "domestic": false
+    },
+    {
+      "key": "zhipu",
+      "displayName": "Zhipu AI",
+      "category": "ai-provider",
+      "defaultColor": "#0F62FE",
+      "keywords": [
+        "chatglm",
+        "glm"
+      ],
+      "file": "logos/zhipu.svg",
+      "kind": "svg",
+      "source": "inline",
+      "alternates": [
+        "_raw/files/zhipu.svg"
+      ],
+      "cnName": "智谱 AI",
+      "domestic": true
+    },
+    {
+      "key": "codex",
+      "displayName": "Codex",
+      "category": "tool",
+      "defaultColor": "",
+      "keywords": [
+        "codex",
+        "openai",
+        "cli"
+      ],
+      "file": "logos/codex.svg",
+      "kind": "svg",
+      "source": "alias",
+      "alternates": [
+        "logos/openai.svg"
+      ],
+      "aliasOf": "openai",
+      "cnName": "",
+      "domestic": false
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# 统一换行：仓库里全部用 LF（Windows 上的编辑器也不会把它改成 CRLF 再提交回来）
+* text=auto eol=lf
+
+# 这些必须是原样字节，不能被当成文本处理
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.exe binary
+*.asar binary
+
+# Windows 专用脚本保留 CRLF（可选，当前没有这类文件，留着给以后用）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 让 GitHub 的语言统计别把图标素材算进去
+icons/** linguist-generated=true
+assets/logos/** linguist-generated=true
+tools/build-icons.js linguist-generated=true
+tools/build-menu-icons.js linguist-generated=true
+
+# 这些文件在 diff 里当二进制看，避免刷屏
+package-lock.json -diff linguist-generated=true

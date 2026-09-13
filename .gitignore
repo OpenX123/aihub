@@ -1,0 +1,20 @@
+node_modules/
+dist/
+npm-silly.log
+install.log
+*.log
+.DS_Store
+Thumbs.db
+
+# 设计稿原图（2 MB，只在本地用来生成图标；生成出来的素材都已提交）
+assets/brand/logo-source.png
+
+# 登录信息导出文件：里面是各站点的 Cookie，绝对不能进仓库
+*-login-*.json
+aihub-login*.json
+ai-multi-hub-login*.json
+
+# 默认配置 / 布局快照之类的本地文件
+config.json
+config.json.bad
+hub-layout.json
