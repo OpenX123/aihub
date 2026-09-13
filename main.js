@@ -260,8 +260,12 @@ function acceleratorHint(raw) {
     modifierName(part.toLowerCase()) || part.toUpperCase()
   )).join('+'));
   if (blocked) return blocked;
-  if (parts.length === 1) return '至少要带一个修饰键（Ctrl / Alt / Shift），或者单用一个 F1~F24';
-  return '这个组合键认不出来，请用「修饰键 + 按键」的写法（例如 Alt+Space、Ctrl+Shift+K）';
+  if (parts.length === 1) {
+    return `至少要带一个修饰键（${isMac ? '⌘ / ⌥ / ⇧' : 'Ctrl / Alt / Shift'}），或者单用一个 F1~F24`;
+  }
+  return isMac
+    ? '这个组合键认不出来，请用「修饰键 + 按键」的写法（例如 Command+Shift+Space、⌘+Shift+K）'
+    : '这个组合键认不出来，请用「修饰键 + 按键」的写法（例如 Alt+Space、Ctrl+Shift+K）';
 }
 
 /** 配置里的快捷键字段：缺字段、写坏了都退回默认值，不让手改配置把功能弄哑 */
@@ -1520,8 +1524,18 @@ function hideToBackground() {
 // 托盘：窗口收进后台之后仍然有一个能点回来的入口
 // ---------------------------------------------------------------------------
 
-/** 托盘图标：优先用应用自己的图标（构建产物里的 512 PNG，缩到 16px） */
+/**
+ * 托盘图标：优先用小尺寸专用图（build/tray.png）。
+ *
+ * 专门做一张而不是把 1024 的图标硬缩到 16px，是为了让菜单栏 / 托盘里的边缘别发灰；
+ * 命名带上 @2x 的同名文件（tray@2x.png），macOS 上 Electron 会自己挑 Retina 那版。
+ */
 function trayImage() {
+  const trayFile = path.join(__dirname, 'build', 'tray.png');
+  if (fs.existsSync(trayFile)) {
+    const image = nativeImage.createFromPath(trayFile);
+    if (!image.isEmpty()) return image;
+  }
   const candidates = [
     path.join(__dirname, 'build', 'icon.png'),
     path.join(__dirname, 'build', 'icon.ico'),

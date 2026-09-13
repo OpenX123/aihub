@@ -1,15 +1,16 @@
 # Aihub
 
 [![CI](https://github.com/OpenX123/aihub/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenX123/aihub/actions/workflows/ci.yml)
+[![Build](https://github.com/OpenX123/aihub/actions/workflows/build.yml/badge.svg)](https://github.com/OpenX123/aihub/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4.svg)](#安装)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20·%20macOS%20(Apple%20Silicon)-0078d4.svg)](#0-安装)
 [![Electron](https://img.shields.io/badge/Electron-44-47848f.svg)](https://www.electronjs.org/)
 
 <img src="assets/brand/logo.png" alt="Aihub" width="420" />
 
 把 DeepSeek、ChatGPT、Claude、豆包、Kimi、智谱 GLM、Gemini 等网页版 AI 应用聚合到一个窗口里，
 用顶部标签切换，**每个服务的登录态各自独立保存、下次启动保持登录**，
-最后可以打包成一个双击即装的 Windows `.exe`。
+最后可以打包成双击即装的 Windows `.exe`，或者 macOS（Apple Silicon）的 `.dmg`。
 
 内置站点：**DeepSeek / ChatGPT / Claude / 豆包 / Kimi / 智谱 GLM / Gemini**，
 每个都自带一份本地 logo（不依赖网站 favicon，也不用点开才显示），
@@ -31,22 +32,46 @@
 
 **方式一：直接装（推荐）**
 
-到 [Releases](https://github.com/OpenX123/aihub/releases) 下载 `Aihub-x.y.z-setup.exe`，双击安装。
-一键安装、不需要管理员权限，装完桌面和开始菜单都有快捷方式。
+到 [Releases](https://github.com/OpenX123/aihub/releases) 下载对应平台的安装包：
 
-> 没有代码签名证书，Windows SmartScreen 可能提示「已保护你的电脑」——
-> 点「更多信息 → 仍要运行」即可，或者自己按下面的方式从源码构建。
+| 平台 | 文件 | 说明 |
+| --- | --- | --- |
+| Windows 10/11 x64 | `Aihub-x.y.z-setup.exe` | 一键安装，不需要管理员权限，装完桌面和开始菜单都有快捷方式 |
+| macOS（Apple Silicon / M 系列） | `Aihub-x.y.z-mac-arm64.dmg` | 拖进「应用程序」即可；另有 `.zip` 版备用 |
+
+> **Windows**：没有代码签名证书，SmartScreen 可能提示「已保护你的电脑」——
+> 点「更多信息 → 仍要运行」即可。
+>
+> **macOS**：同样没有签名和公证，首次打开会被 Gatekeeper 拦下。
+> 两种办法任选：① 在「应用程序」里 **右键点 Aihub → 打开 → 仍要打开**（只需一次）；
+> ② 或者执行 `xattr -dr com.apple.quarantine /Applications/Aihub.app`。
+> 打包脚本会补一次 ad-hoc 签名（Apple Silicon 上不加签名的 app 根本起不来），
+> 但去公证需要 Apple 开发者账号，暂时没有做。
 
 **方式二：从源码跑**
 
-```powershell
+```bash
 git clone https://github.com/OpenX123/aihub.git
 cd aihub
 npm install          # 安装依赖
 npm start            # 启动
 
-npm run dist         # 打成安装包（产物在 dist/）
+npm run dist         # Windows：打成 NSIS 安装包（产物在 dist/）
+npm run dist:mac     # macOS：打成 dmg + zip（arm64，必须在 macOS 上跑）
 ```
+
+**方式三：让 GitHub 帮你构建**
+
+推送到 `main` 或提 PR 时，[Build 工作流](.github/workflows/build.yml) 会自动同时构建
+Windows x64 和 macOS arm64 两个平台，产物挂在这次运行的 **Artifacts** 里（保留 30 天）。
+
+想发一个正式版本：把 `package.json` 里的 `version` 改好，然后推一个同名的标签：
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+两个平台的安装包会自动构建并挂到对应的 Release 上（已存在同名 Release 则覆盖其中的文件）。
 
 ---
 
@@ -482,6 +507,10 @@ npm start
       老配置自动升级内置站点列表
 - [x] **11. 观感与可用性**：选中标签不再有底色和侧边色条、logo 不再垫白底（改按明暗自动换变体）、
       外观主题可选 深色 / 浅色 / 跟随系统、修好「点 ⇔ 分栏没反应」（下拉菜单被原生视图挡住）
+- [x] **12. 跨平台 + 自动构建**：macOS（Apple Silicon）可打包运行（托盘、Dock、
+      `Command` 修饰键提示、应用菜单都按平台走），GitHub Actions 自动出
+      Windows x64 与 macOS arm64 两个平台的安装包，推 `v*` 标签自动发 Release
+- [ ] **13. 签名与公证**：Windows 代码签名 + Apple 开发者签名/公证（需要证书，可选）
 
 ---
 

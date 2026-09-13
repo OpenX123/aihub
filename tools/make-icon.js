@@ -10,7 +10,9 @@
  *
  * 产物：
  *   build/icon.ico              多分辨率图标（16/32/48/64/128/256，BMP 条目，兼容性最好）
- *   build/icon.png              512x512 图形（打包用 / 应用内展示用）
+ *   build/icon.png              1024x1024 图形（打包用：Windows 图标 + macOS 的 icns 来源）
+ *   build/tray.png              32x32 托盘/菜单栏图标
+ *   build/tray@2x.png           64x64 高分屏版本（macOS 会自己找同名 @2x 文件）
  *   assets/brand/logo.png       裁掉多余留白的完整锁版（README 用）
  *   assets/brand/logo-mark.png  512x512 图形（正方形，居中留边）
  *
@@ -34,9 +36,11 @@ const CHECK_ONLY = process.argv.includes('--check');
 
 // 图标里每一档都要有：小尺寸给任务栏/资源管理器，大尺寸给高分屏
 const ICO_SIZES = [16, 32, 48, 64, 128, 256];
-const ICON_PNG = 512;   // build/icon.png
+// 1024 是 macOS 图标的标准尺寸（electron-builder 用它现场转 icns，所以不能小于 512）
+const ICON_PNG = 1024;   // build/icon.png
 const LOCKUP_MAX = 1024; // assets/brand/logo.png 的长边上限
 const MARK_PNG = 512;    // assets/brand/logo-mark.png
+const TRAY_PNG = 32;     // build/tray.png（Windows 托盘 / macOS 菜单栏）
 const MARGIN = 1.22;     // 图形外面留多少边（1.16 = 图形占画布约 86%）
 const INK_ALPHA = 60;    // 高于这个 alpha 才算「真的有内容」（低于它多半是去背残留）
 const MIN_ROW_RATIO = 0.004; // 一行/一列里至少要有这么多比例的像素有内容才算数
@@ -277,6 +281,17 @@ window.__run = async () => {
   const lockup = renderPng(clean, 0, markTop, W, H - markTop, lockupW,
     Math.round((H - markTop) * lockupW / W));
   const markPng = renderPng(markCanvas, sx, sy, sSide, sSide, __MARK_PNG__, __MARK_PNG__);
+  const iconPng = renderPng(markCanvas, sx, sy, sSide, sSide, __ICON_PNG__, __ICON_PNG__);
+  // 托盘：小尺寸直接从小画布重采样，别拿 1024 硬缩，边缘会发灰。
+  // 而且托盘 / 菜单栏要的是「图形尽量占满」，所以这里用贴合图形的裁剪（留边 1.02），
+  // 不用图标那套 1.22 的留白——否则在 16px 的菜单栏里会显得又小又空。
+  const traySide = Math.round(Math.max(markW, markH) * 1.02);
+  let tsx = Math.round(cx - traySide / 2);
+  let tsy = Math.round(cy - traySide / 2);
+  tsx = Math.max(0, Math.min(W - traySide, tsx));
+  tsy = Math.max(0, Math.min(H - traySide, tsy));
+  const trayPng = renderPng(markCanvas, tsx, tsy, traySide, traySide, __TRAY_PNG__, __TRAY_PNG__);
+  const tray2xPng = renderPng(markCanvas, tsx, tsy, traySide, traySide, __TRAY_PNG__ * 2, __TRAY_PNG__ * 2);
 
   return {
     source: { width: W, height: H },
@@ -287,6 +302,9 @@ window.__run = async () => {
     sizes,
     lockup,
     markPng,
+    iconPng,
+    trayPng,
+    tray2xPng,
   };
 };
 </script></body></html>`;
@@ -307,7 +325,9 @@ function html() {
     .replaceAll('__BG_LUM__', String(BG_LUM))
     .replaceAll('__BG_RAMP__', String(BG_RAMP))
     .replaceAll('__LOCKUP_MAX__', String(LOCKUP_MAX))
-    .replaceAll('__MARK_PNG__', String(MARK_PNG));
+    .replaceAll('__MARK_PNG__', String(MARK_PNG))
+    .replaceAll('__ICON_PNG__', String(ICON_PNG))
+    .replaceAll('__TRAY_PNG__', String(TRAY_PNG));
 }
 
 // ---------------------------------------------------------------------------
@@ -359,7 +379,9 @@ async function main() {
   const entries = ICO_SIZES.map((size) => ({ size, rgba: Buffer.from(result.sizes[size], 'base64') }));
   const results = [];
   results.push(writeIfChanged(path.join(BUILD_DIR, 'icon.ico'), encodeIco(entries)));
-  results.push(writeIfChanged(path.join(BUILD_DIR, 'icon.png'), dataUrlToBuffer(result.markPng)));
+  results.push(writeIfChanged(path.join(BUILD_DIR, 'icon.png'), dataUrlToBuffer(result.iconPng)));
+  results.push(writeIfChanged(path.join(BUILD_DIR, 'tray.png'), dataUrlToBuffer(result.trayPng)));
+  results.push(writeIfChanged(path.join(BUILD_DIR, 'tray@2x.png'), dataUrlToBuffer(result.tray2xPng)));
   results.push(writeIfChanged(path.join(BRAND_DIR, 'logo.png'), dataUrlToBuffer(result.lockup)));
   results.push(writeIfChanged(path.join(BRAND_DIR, 'logo-mark.png'), dataUrlToBuffer(result.markPng)));
 

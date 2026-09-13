@@ -1505,6 +1505,10 @@
   const hkHint = $('hk-hint');
   let recording = false;
 
+  // 提示语里的修饰键写法要跟着平台走：macOS 用户看到「Ctrl」会去找键盘上不存在的键
+  const MODIFIER_HINT = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '')
+    ? '⌘ / ⌥ / ⇧' : 'Ctrl / Alt / Shift';
+
   /** 键盘事件 -> Electron accelerator 里主键的名字（认不出返回空） */
   function keyNameFromEvent(event) {
     const code = event.code || '';
@@ -1549,7 +1553,7 @@
     let text = '';
     let kind = '';
     if (recording) {
-      text = '按下要用的组合键（Esc 取消）；建议带 Ctrl / Alt / Shift';
+      text = '按下要用的组合键（Esc 取消）；建议带 ' + MODIFIER_HINT;
     } else if (!enabled) {
       text = '已关闭：不再占用系统级快捷键，窗口只能从任务栏或托盘唤出。';
     } else if (hk.registered) {
@@ -1628,7 +1632,7 @@
       // 只按了修饰键：继续等主键；按了单个普通键：说清楚为什么不行
       if (key) {
         hkHint.className = 'hk-hint warn';
-        hkHint.textContent = '至少要带一个修饰键（Ctrl / Alt / Shift），或者单用一个 F1~F24。';
+        hkHint.textContent = '至少要带一个修饰键（' + MODIFIER_HINT + '），或者单用一个 F1~F24。';
       }
       return;
     }

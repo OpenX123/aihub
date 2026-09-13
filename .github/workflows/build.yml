@@ -1,0 +1,118 @@
+name: Build
+
+# 自动打包：Windows x64（NSIS 安装包）+ macOS arm64（dmg / zip，Apple Silicon）。
+# 推 main 和提 PR 时只出产物（Artifacts），推 v* 标签时额外发一个 Release。
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# Release 需要写权限；其余步骤只读
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      # 图标素材是产物不是源，先按图标表重新生成一遍，保证打进包里的是最新的。
+      # （生成脚本 tools/build-icons.js 是纯 Node；需要 Electron 的 menu-icons 由 CI 的 checks 任务校验）
+      - name: 生成图标素材
+        run: npm run icons
+
+      - name: 打包（NSIS 一键安装）
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: 显示产物大小
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -Filter *.exe |
+            Select-Object Name, @{ n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aihub-windows-x64
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  macos-arm64:
+    name: macOS arm64
+    runs-on: macos-14 # Apple Silicon（M 系列）runner
+    env:
+      # 没配签名证书时不要去找钥匙串，否则打包会在签名那步失败。
+      # 以后要做签名 + 公证：把这个删掉，改用 CSC_LINK / CSC_KEY_PASSWORD / APPLE_ID 等 secret。
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 生成图标素材
+        run: npm run icons
+
+      # mac 的 .icns 由 electron-builder 从 build/icon.png（1024）现场转出来
+      - name: 打包（dmg + zip，Apple Silicon）
+        run: npx electron-builder --mac --arm64 --publish never
+
+      - name: 显示产物大小
+        run: ls -lh dist/*.dmg dist/*.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aihub-macos-arm64
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  # 只有推 v* 标签才走的发布任务：把上面两个 job 的产物挂到 Release 上
+  release:
+    name: 发布 Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows-x64, macos-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 汇总产物
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' \) -exec cp {} release/ \;
+          ls -lh release
+
+      - name: 创建或更新 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" release/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Aihub $tag" \
+              --generate-notes
+          fi

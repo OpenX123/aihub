@@ -68,7 +68,13 @@ const menuIcons = icons.filter((f) => f.path.startsWith('icons/menu/'));
 if (menuIcons.length < 100) problems.push(`icons/menu 只有 ${menuIcons.length} 个，原生菜单会缺 logo（跑 npm run menu-icons）`);
 // 托盘图标：窗口收进后台后的兜底入口，缺了的话打包版就没有托盘（快捷键唤出仍在）
 if (!files.some((f) => f.path === 'build/icon.png')) {
-  problems.push('缺少 build/icon.png（托盘图标 + 窗口图标会缺失）');
+  problems.push('缺少 build/icon.png（窗口图标 / 托盘兜底图会缺失）');
+}
+// 小尺寸专用托盘图：不带 @2x 的话 macOS 菜单栏 / Windows 高分屏下会糊
+for (const need of ['build/tray.png', 'build/tray@2x.png']) {
+  if (!files.some((f) => f.path === need)) {
+    problems.push(`缺少 ${need}（托盘 / 菜单栏图标会退回大图硬缩，发灰）`);
+  }
 }
 for (const f of files) {
   if (/^(assets|tools|dist)\//.test(f.path)) problems.push(`不该打包的目录进了包：${f.path}`);

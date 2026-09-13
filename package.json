@@ -35,8 +35,10 @@
     "menu-icons": "electron tools/build-menu-icons.js",
     "check:icons": "node tools/build-icons.js --check && electron tools/make-icon.js --check && node tools/build-menu-icons.js --check",
     "check:package": "node tools/check-package.js",
-    "lint": "node --check main.js && node --check preload.js && node --check tools/smoke.js && node --check tools/build-icons.js && node --check tools/check-package.js",
+    "lint": "node --check main.js && node --check preload.js && node --check tools/smoke.js && node --check tools/build-icons.js && node --check tools/check-package.js && node --check tools/after-pack.js",
     "dist": "npm run icons && npm run menu-icons && electron-builder --win",
+    "dist:win": "npm run icons && npm run menu-icons && electron-builder --win --x64 --publish never",
+    "dist:mac": "npm run icons && npm run menu-icons && electron-builder --mac --arm64 --publish never",
     "dist:dir": "npm run icons && npm run menu-icons && electron-builder --win --dir"
   },
   "devDependencies": {
@@ -59,10 +61,13 @@
       "icons.js",
       "icons/**/*",
       "build/icon.png",
+      "build/tray.png",
+      "build/tray@2x.png",
       "package.json"
     ],
     "asar": true,
     "compression": "normal",
+    "afterPack": "tools/after-pack.js",
     "win": {
       "target": [
         {
@@ -74,6 +79,41 @@
       ],
       "icon": "build/icon.ico",
       "artifactName": "${productName}-${version}-setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "darkModeSupport": true,
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "contents": [
+        {
+          "x": 140,
+          "y": 200
+        },
+        {
+          "x": 400,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "nsis": {
       "oneClick": true,
