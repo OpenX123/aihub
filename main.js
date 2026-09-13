@@ -44,7 +44,7 @@ const SPLIT_GAP = 4; // 两栏之间的缝隙（视觉上就是一条细线，�
 const DIVIDER_HIT_PAD = 5; // 拖动热区在缝隙两侧各外扩这么多，鼠标不用精确压在 4px 上
 const MIN_PANE_WIDTH = 260; // 单栏最小宽度（拖动分隔条时的下限）
 const MAX_PANES = 4; // 最多同时显示几栏
-const CONFIG_VERSION = 2;
+const CONFIG_VERSION = 3;
 
 // 客户区小于这个尺寸时认为窗口处于最小化等异常状态，不做布局
 const MIN_SANE_WIDTH = 200;
@@ -67,6 +67,29 @@ const SERVICES_VERSION = 2;
 
 // 预加载时相邻两个服务的间隔，避免启动瞬间一起抢带宽
 const PRELOAD_STAGGER = 350;
+
+// ---------------------------------------------------------------------------
+// 后台标签休眠
+//
+// 每个标签都是一个完整的 Chromium 渲染进程，开着不用也照样占内存。
+// 闲置超过设定时间的后台标签直接把视图销毁掉，点回去时按 config.lastUrls 原地址重建。
+// 之所以观感上看不出来：标签栏的名字和 logo 来自本地内置图标、标题缓存在渲染端，
+// 都跟主进程里这个视图的生死无关。
+// ---------------------------------------------------------------------------
+const HIBERNATE_CHOICES = [15, 30, 120]; // 分钟；UI 上再加一档「不休眠」
+const HIBERNATE_DEFAULT_MINUTES = 30;
+const HIBERNATE_SWEEP_INTERVAL = 60000; // 一分钟扫一次就够了，判定本身很便宜
+const INPUT_PROBE_TIMEOUT = 1500;
+
+// 回收前先问一句「输入框里还有没发出去的字吗」。探不到 / 超时一律当作有，宁可多占一会儿内存。
+const INPUT_DIRTY_JS = `(() => {
+  const nodes = document.querySelectorAll('textarea, input[type="text"], input[type="search"], [contenteditable="true"]');
+  for (const el of nodes) {
+    const text = (el.value !== undefined ? el.value : el.innerText) || '';
+    if (text.trim()) return true;
+  }
+  return false;
+})()`;
 
 // ---------------------------------------------------------------------------
 // 全局快捷键（老板键）
@@ -281,6 +304,16 @@ function normalizeHotkeyConfig(raw) {
   };
 }
 
+/** 休眠设置：认不出来的值一律退回默认（开启 + 30 分钟） */
+function normalizeHibernateConfig(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const minutes = Number(source.minutes);
+  return {
+    enabled: source.enabled !== false,
+    minutes: HIBERNATE_CHOICES.includes(minutes) ? minutes : HIBERNATE_DEFAULT_MINUTES,
+  };
+}
+
 function newServiceId(name, existing) {
   const slug = String(name || '')
     .trim()
@@ -318,6 +351,9 @@ function loadConfig() {
       }
     }
   }
+
+  // 首次运行 / 解析失败时当成 0：下面几处「老配置怎么迁」的判断都靠它
+  const rawVersion = raw ? Number(raw.version) || 1 : 0;
 
   const source = raw && Array.isArray(raw.services) && raw.services.length
     ? raw.services
@@ -406,10 +442,16 @@ function loadConfig() {
     weights,
     lastUrls,
     pendingWipe,
-    preload: raw ? raw.preload !== false : true,
+    // v3 起预加载默认关闭：内置本地 logo 落地之后，预加载换不来标签栏上的什么东西，
+    // 只换来启动即七个渲染进程。老配置一律迁到关闭，想要的人自己去 ⚙ 里打开。
+    preload: rawVersion >= 3 ? raw.preload === true : false,
+    hibernate: normalizeHibernateConfig(raw && raw.hibernate),
     theme: ['dark', 'light', 'system'].includes(raw && raw.theme) ? raw.theme : 'system',
     hotkey: normalizeHotkeyConfig(raw && raw.hotkey),
   };
+  if (rawVersion > 0 && rawVersion < 3 && raw.preload !== false) {
+    log('配置升级：启动时预加载已默认关闭，改为只加载标签栏当前要显示的那几栏（⚙ 里可重新打开）');
+  }
   if (migrated.notes.length) migrated.notes.forEach((note) => log('内置站点已更新:', note));
 }
 
@@ -668,6 +710,7 @@ function equalizeAll() {
 
 /** 焦点栏：只切换键盘/工具栏的目标，不动布局 */
 function focusPane(id) {
+  touchActive(id); // 页面里点一下也算活跃（wc 的 focus 事件接到这里）
   if (!config.panes.includes(id) || config.activeId === id) return;
   config.activeId = id;
   saveConfig();
@@ -735,6 +778,7 @@ function togglePaneInLayout(id) {
 let mainWindow = null;
 const views = new Map(); // id -> WebContentsView
 const attached = new Set(); // 当前已挂到窗口上的 view id
+const lastActive = new Map(); // id -> 上次活跃的时间戳（毫秒），休眠扫描用
 const popups = new Set(); // 第三方登录弹窗
 const hardenedSessions = new Set(); // 已配置过策略的 partition
 let overlayOpen = false; // 设置面板打开时，隐藏所有视图让位给窗口自身页面
@@ -757,6 +801,11 @@ function publicState() {
     maxPanes: MAX_PANES,
     minPaneWidth: MIN_PANE_WIDTH,
     preload: Boolean(config.preload),
+    hibernate: {
+      enabled: Boolean(config.hibernate.enabled),
+      minutes: config.hibernate.minutes,
+      choices: HIBERNATE_CHOICES.slice(),
+    },
     theme: config.theme,
     hotkey: {
       enabled: Boolean(config.hotkey.enabled),
@@ -770,6 +819,13 @@ function publicState() {
       defaultAccelerator: HOTKEY_DEFAULT,
     },
     version: app.getVersion(),
+    update: {
+      supported: updatesSupported(),
+      status: updateState.status,
+      version: updateState.version,
+      percent: updateState.percent,
+      error: updateState.error,
+    },
     userData: app.getPath('userData'),
   };
 }
@@ -1004,6 +1060,7 @@ function wireServiceContents(svc, view) {
   });
   wc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || errorCode === -3) return; // -3 = ERR_ABORTED（用户主动打断）
+    if (!views.has(svc.id)) return; // 视图已被主动回收（休眠 / 删服务），不是真的加载失败
     log('加载失败:', svc.id, errorCode, errorDescription, validatedURL);
     sendTabStatus(svc.id, {
       loading: false,
@@ -1013,6 +1070,8 @@ function wireServiceContents(svc, view) {
     showErrorPage(svc, errorCode, errorDescription, validatedURL || config.lastUrls[svc.id] || svc.url);
   });
   wc.on('render-process-gone', (_event, details) => {
+    // destroyView() 是先从 views 里删掉再 close，所以这里查不到就说明是我们自己收的，不是崩溃
+    if (!views.has(svc.id)) return;
     log('渲染进程退出:', svc.id, details.reason);
     sendTabStatus(svc.id, {
       loading: false,
@@ -1052,6 +1111,8 @@ function ensureView(svc) {
 
   wireServiceContents(svc, view);
   views.set(svc.id, view);
+  touchActive(svc.id);
+  sendTabStatus(svc.id, { hibernated: false }); // 休眠后被点回来时，把标签上的休眠标记摘掉
 
   const startUrl = config.lastUrls[svc.id] || svc.url;
   log('创建视图:', svc.id, '->', startUrl);
@@ -1074,6 +1135,7 @@ function destroyView(id) {
   }
   attached.delete(id);
   views.delete(id);
+  lastActive.delete(id);
   try {
     view.webContents.close();
   } catch {
@@ -1127,6 +1189,104 @@ function preloadAll({ force = false } = {}) {
   };
 
   step();
+}
+
+// ---------------------------------------------------------------------------
+// 后台标签休眠：闲置久了就把渲染进程还给系统，点回去再按原地址重建
+// ---------------------------------------------------------------------------
+
+let hibernateTimer = null;
+
+function touchActive(id) {
+  if (!id) return;
+  lastActive.set(id, Date.now());
+}
+
+/** 页面里还有没发出去的字吗？探不到 / 超时一律当作「有」，宁可多占一会儿内存 */
+function hasUnsentInput(wc) {
+  if (!wc || wc.isDestroyed()) return Promise.resolve(false);
+  const probe = wc.executeJavaScript(INPUT_DIRTY_JS, false).then((dirty) => Boolean(dirty));
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(true), INPUT_PROBE_TIMEOUT));
+  return Promise.race([probe, timeout]).catch(() => true);
+}
+
+/**
+ * 扫一遍所有视图，把闲够了的后台标签回收掉。
+ * 任何一条豁免命中就跳过：看得见的、在出声的、在加载的、开着开发者工具的、有未发送输入的。
+ */
+async function sweepIdle() {
+  if (!config.hibernate.enabled) return [];
+  // 第三方登录弹窗开着的时候整轮不收：弹窗和标签共用 session，但回调要落回 opener，
+  // 把标签本体收掉会让这次登录白做。宁可这一轮什么都不省。
+  if (popups.size > 0) return [];
+  const limit = config.hibernate.minutes * 60000;
+  const now = Date.now();
+  const recycled = [];
+
+  for (const [id, view] of Array.from(views.entries())) {
+    if (config.panes.includes(id)) continue; // 正摆在屏幕上
+    if (id === config.activeId) continue; // 当前焦点栏
+    const wc = view.webContents;
+    if (!wc || wc.isDestroyed()) continue;
+    if (now - (lastActive.get(id) || now) < limit) continue;
+    try {
+      if (wc.isCurrentlyAudible()) continue; // 正在朗读 / 播语音
+      if (wc.isLoading()) continue;
+      if (wc.isDevToolsOpened()) continue;
+    } catch (err) {
+      log('休眠判定失败，本轮跳过:', id, err.message);
+      continue;
+    }
+    if (await hasUnsentInput(wc)) continue;
+    if (!views.has(id)) continue; // 等探测的这一会儿里状态变了
+
+    log('休眠后台标签:', id);
+    destroyView(id);
+    sendTabStatus(id, { hibernated: true, loading: false, error: null });
+    recycled.push(id);
+  }
+  return recycled;
+}
+
+function startHibernateSweep() {
+  stopHibernateSweep();
+  // 自检里休眠是手动驱动的（ctx.sweepIdle），后台再定时收一遍会让后面的断言时灵时不灵
+  if (process.env.AIHUB_SMOKE) return;
+  hibernateTimer = setInterval(() => {
+    sweepIdle().catch((err) => log('休眠扫描出错:', err.message));
+  }, HIBERNATE_SWEEP_INTERVAL);
+}
+
+function stopHibernateSweep() {
+  if (hibernateTimer) {
+    clearInterval(hibernateTimer);
+    hibernateTimer = null;
+  }
+}
+
+function setHibernate(input) {
+  const data = input || {};
+  const next = {
+    enabled: data.enabled === undefined ? config.hibernate.enabled : Boolean(data.enabled),
+    minutes: config.hibernate.minutes,
+  };
+  if (data.minutes !== undefined) {
+    const minutes = Number(data.minutes);
+    if (!HIBERNATE_CHOICES.includes(minutes)) {
+      return { ok: false, error: `休眠时长只能是 ${HIBERNATE_CHOICES.join(' / ')} 分钟` };
+    }
+    next.minutes = minutes;
+  }
+  config.hibernate = next;
+  saveConfig();
+  broadcast();
+  return { ok: true, hibernate: publicState().hibernate };
+}
+
+function hibernateStatusText() {
+  if (!config.hibernate.enabled) return '关闭';
+  const minutes = config.hibernate.minutes;
+  return minutes >= 60 ? `闲置 ${minutes / 60} 小时` : `闲置 ${minutes} 分钟`;
 }
 
 function setPreload(on) {
@@ -1285,6 +1445,10 @@ function buildShellMenuTemplate() {
     { type: 'separator' },
     { label: '启动时预加载所有标签', type: 'checkbox', checked: Boolean(config.preload), click: () => setPreload(!config.preload) },
     {
+      label: `后台标签休眠：${hibernateStatusText()}`,
+      enabled: false,
+    },
+    {
       label: `外观主题：${THEME_LABELS[config.theme] || config.theme}`,
       enabled: false,
     },
@@ -1294,6 +1458,8 @@ function buildShellMenuTemplate() {
       label: `唤出快捷键：${config.hotkey.accelerator} · ${hotkeyStatusText()}`,
       enabled: false,
     },
+    { type: 'separator' },
+    { label: updateMenuLabel(), enabled: updatesSupported(), click: () => onUpdateMenuClick() },
     { type: 'separator' },
     { label: '设置 · 服务管理', click: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('ui:open-settings'); } },
     { label: '开发者工具', click: () => toggleDevTools(null) },
@@ -1306,6 +1472,128 @@ function popupShellMenu(point) {
   const y = Math.max(0, Math.round(Number(point && point.y) || 0));
   Menu.buildFromTemplate(buildShellMenuTemplate()).popup({ window: mainWindow, x, y });
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// 自动更新（仅 Windows）
+//
+// 只在打包版里跑：开发时和自检时都不碰网络。
+// macOS 不接——Squirrel.Mac 强制校验代码签名，我们的 mac 包没签名，
+// 接上去只会每次都失败；等哪天买了证书做了公证再说。
+// Windows 这边 NSIS 是 oneClick + perMachine:false 的 per-user 安装，
+// 装的时候不需要提权，所以可以真正做到静默更新。
+// ---------------------------------------------------------------------------
+
+const UPDATE_FIRST_DELAY = 10 * 1000; // 启动后等一会再查，别跟首屏加载抢带宽
+const UPDATE_INTERVAL = 4 * 60 * 60 * 1000; // 之后每 4 小时查一次（这个应用常驻托盘，很少重启）
+
+// status: idle（没查过 / 已是最新） | checking | downloading | ready | error
+let updateState = { status: 'idle', version: '', percent: 0, error: '' };
+let autoUpdater = null;
+let updateTimer = null;
+
+function setUpdateState(patch) {
+  updateState = { ...updateState, ...patch };
+  broadcast();
+  refreshTrayMenu();
+}
+
+function updatesSupported() {
+  return app.isPackaged && process.platform === 'win32' && !process.env.AIHUB_SMOKE;
+}
+
+/** 第一次用到时才 require：万一模块没装好，也只是没有自动更新，不该把应用带崩 */
+function getUpdater() {
+  if (autoUpdater) return autoUpdater;
+  try {
+    ({ autoUpdater } = require('electron-updater'));
+  } catch (err) {
+    log('加载 electron-updater 失败，自动更新不可用:', err.message);
+    return null;
+  }
+  autoUpdater.logger = { info: log, warn: log, error: log, debug: () => {} };
+  autoUpdater.autoDownload = true; // 查到就下，下完再提示（默认值，写出来当文档）
+  autoUpdater.autoInstallOnAppQuit = true; // 用户不点「立即重启」的话，下次真退出时装上
+
+  autoUpdater.on('checking-for-update', () => setUpdateState({ status: 'checking', error: '' }));
+  autoUpdater.on('update-available', (info) => {
+    log('发现新版本:', info && info.version);
+    setUpdateState({ status: 'downloading', version: (info && info.version) || '', percent: 0, error: '' });
+  });
+  autoUpdater.on('update-not-available', () => setUpdateState({ status: 'idle', percent: 0, error: '' }));
+  autoUpdater.on('download-progress', (p) => {
+    setUpdateState({ status: 'downloading', percent: Math.round((p && p.percent) || 0) });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    log('新版本已下载:', info && info.version);
+    setUpdateState({ status: 'ready', version: (info && info.version) || updateState.version, percent: 100 });
+  });
+  // 断网、GitHub 抽风、Release 还没传完……都会走到这儿。
+  // 只记下来，不弹任何东西：用户没要求更新，不该为此被打扰。
+  autoUpdater.on('error', (err) => {
+    const message = (err && err.message) || String(err);
+    log('检查更新失败:', message);
+    setUpdateState({ status: 'error', percent: 0, error: message });
+  });
+  return autoUpdater;
+}
+
+function checkForUpdate(options) {
+  const manual = Boolean(options && options.manual);
+  if (!updatesSupported()) {
+    return { ok: false, error: app.isPackaged ? '当前平台暂不支持自动更新' : '开发模式下不检查更新' };
+  }
+  // 正在下载 / 已经下好时再点一次没有意义，直接把当前状态还回去
+  if (updateState.status === 'downloading' || updateState.status === 'ready') {
+    return { ok: true, state: updateState, skipped: true };
+  }
+  const updater = getUpdater();
+  if (!updater) return { ok: false, error: '自动更新模块不可用' };
+  updater.checkForUpdates().catch((err) => {
+    // reject 和 'error' 事件会同时来，状态已经在事件里写过了，这里只兜住未处理的 rejection
+    log('检查更新异常:', (err && err.message) || err);
+  });
+  return { ok: true, state: updateState, manual };
+}
+
+function installUpdate() {
+  if (updateState.status !== 'ready' || !autoUpdater) return { ok: false, error: '还没有已下载的新版本' };
+  quitting = true; // 否则「关闭到托盘」会把这次退出拦下来，重启装不上
+  try {
+    autoUpdater.quitAndInstall();
+    return { ok: true };
+  } catch (err) {
+    log('安装更新失败:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+function startUpdateChecks() {
+  if (!updatesSupported() || updateTimer) return;
+  setTimeout(() => checkForUpdate({}), UPDATE_FIRST_DELAY);
+  updateTimer = setInterval(() => checkForUpdate({}), UPDATE_INTERVAL);
+}
+
+/** 菜单项文案：让用户随时能看到「到底有没有在更新」 */
+function updateMenuLabel() {
+  if (!updatesSupported()) return '检查更新（打包版才可用）';
+  switch (updateState.status) {
+    case 'checking':
+      return '正在检查更新…';
+    case 'downloading':
+      return `正在下载 ${updateState.version}… ${updateState.percent}%`;
+    case 'ready':
+      return `重启并安装 ${updateState.version}`;
+    case 'error':
+      return '检查更新（上次失败，点这里重试）';
+    default:
+      return `检查更新（当前 ${app.getVersion()}）`;
+  }
+}
+
+function onUpdateMenuClick() {
+  if (updateState.status === 'ready') installUpdate();
+  else checkForUpdate({ manual: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -1593,6 +1881,7 @@ function buildTrayMenuTemplate() {
     { label: '隐藏到后台', enabled: visible, click: () => hideToBackground() },
     { type: 'separator' },
     { label: `全局快捷键：${accelerator} · ${hotkeyStatusText()}`, enabled: false },
+    { label: updateMenuLabel(), enabled: updatesSupported(), click: () => onUpdateMenuClick() },
     { label: '设置…', click: () => openSettingsPanel() },
     { type: 'separator' },
     { label: '退出 Aihub', click: () => quitApp() },
@@ -1749,6 +2038,8 @@ function layout() {
     const svc = getService(pane.id);
     if (!svc) return;
     const view = ensureView(svc);
+    // 摆在屏幕上的那几栏永远算活跃：看得见的东西不该在你眼前被回收
+    touchActive(pane.id);
     if (!attached.has(pane.id)) {
       mainWindow.contentView.addChildView(view);
       attached.add(pane.id);
@@ -1791,6 +2082,7 @@ function layout() {
 function activate(id, { focus = true } = {}) {
   const svc = getService(id);
   if (!svc) return;
+  touchActive(id);
 
   if (config.panes.includes(id)) {
     config.activeId = id;
@@ -1824,19 +2116,31 @@ function activeView() {
 
 function reloadTab(id, { ignoreCache = false } = {}) {
   const targetId = id || config.activeId;
-  const view = views.get(targetId);
-  if (!view || view.webContents.isDestroyed()) return;
-  if (ignoreCache) view.webContents.reloadIgnoringCache();
-  else view.webContents.reload();
+  const svc = getService(targetId);
+  if (!svc) return;
+  // 休眠过的标签在 views 里是查不到的，直接 return 会让 F5 静默失效。
+  // ensureView 本来就会从 lastUrls 恢复到原地址，这一次「刷新」等于把它唤醒。
+  const existing = views.get(targetId);
+  if (!existing || existing.webContents.isDestroyed()) {
+    ensureView(svc);
+    return;
+  }
+  if (ignoreCache) existing.webContents.reloadIgnoringCache();
+  else existing.webContents.reload();
 }
 
 function goHome(id) {
   const targetId = id || config.activeId;
   const svc = getService(targetId);
-  const view = views.get(targetId);
-  if (!svc || !view || view.webContents.isDestroyed()) return;
+  if (!svc) return;
   delete config.lastUrls[targetId];
   saveConfig();
+  // 同上：休眠中的标签也要能回首页。lastUrls 刚删掉，ensureView 的起始地址就是 svc.url
+  const view = views.get(targetId);
+  if (!view || view.webContents.isDestroyed()) {
+    ensureView(svc);
+    return;
+  }
   view.webContents.loadURL(svc.url).catch(() => {});
 }
 
@@ -2612,9 +2916,12 @@ function installIpc() {
   ipcMain.handle('services:update', (_event, input) => updateService(input));
   ipcMain.handle('config:set-preload', (_event, payload) => setPreload(payload));
   ipcMain.handle('config:get-preload', () => Boolean(config.preload));
+  ipcMain.handle('config:set-hibernate', (_event, payload) => setHibernate(payload));
   ipcMain.handle('config:set-theme', (_event, payload) => setTheme(String(payload || '')));
   ipcMain.handle('config:set-hotkey', (_event, payload) => setHotkey(payload));
   ipcMain.handle('config:get-hotkey', () => publicState().hotkey);
+  ipcMain.handle('update:check', () => checkForUpdate({ manual: true }));
+  ipcMain.on('update:install', () => installUpdate());
   ipcMain.handle('ui:split-menu', (_event, point) => popupSplitMenu(point));
   ipcMain.handle('ui:shell-menu', (_event, point) => popupShellMenu(point));
   ipcMain.handle('services:remove', (_event, payload) => {
@@ -2724,9 +3031,11 @@ function createWindow() {
   });
 
   installIpc();
+  // activate -> layout 只会给分屏里那几栏建视图，也就是「只加载标签栏需要的」
   activate(config.activeId || config.services[0].id, { focus: false });
-  // 其余标签按顺序在后台加载好（标题、favicon 不用点就有）
+  // 预加载默认关着，preloadAll() 会自己空转；只有用户在 ⚙ 里打开了才真的去挨个加载
   preloadAll();
+  startHibernateSweep();
 }
 
 // ---------------------------------------------------------------------------
@@ -2866,6 +3175,8 @@ if (!gotLock) {
     // 全局快捷键要在窗口建好之后注册：注册失败时至少还能看到窗口
     registerHotkey();
     createTray();
+    // 打包版才会真的去查；开发跑和自检都被 updatesSupported() 挡在外面
+    startUpdateChecks();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -2893,6 +3204,13 @@ if (!gotLock) {
           removeService,
           migrateServices,
           setPreload,
+          setHibernate,
+          sweepIdle,
+          lastActive,
+          destroyView,
+          reloadTab,
+          popups,
+          HIBERNATE_CHOICES,
           setTheme,
           buildSplitMenuTemplate,
           buildShellMenuTemplate,
@@ -2958,6 +3276,7 @@ if (!gotLock) {
 app.on('before-quit', () => {
   quitting = true;
   flushConfig();
+  stopHibernateSweep();
   // 快捷键占着系统资源，退出前一定要还回去（否则要等进程真正结束才释放）
   unregisterHotkey();
   destroyTray();

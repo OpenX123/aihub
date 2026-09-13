@@ -47,6 +47,9 @@ contextBridge.exposeInMainWorld('api', {
   setPreload: (on) => ipcRenderer.invoke('config:set-preload', Boolean(on)),
   getPreload: () => ipcRenderer.invoke('config:get-preload'),
 
+  // 偏好：后台标签闲置多久自动休眠（释放它的渲染进程，点回去自动恢复）
+  setHibernate: (input) => ipcRenderer.invoke('config:set-hibernate', input || {}),
+
   // 外观主题：dark / light / system
   setTheme: (theme) => ipcRenderer.invoke('config:set-theme', String(theme || '')),
 
@@ -64,6 +67,10 @@ contextBridge.exposeInMainWorld('api', {
   // 登录信息迁移
   exportLogin: (password) => ipcRenderer.invoke('login:export', { password }),
   importLogin: (options) => ipcRenderer.invoke('login:import', options || {}),
+
+  // 自动更新（只有 Windows 打包版会真的去查；状态跟着 onState 一起回来）
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.send('update:install'),
 
   // 窗口
   setOverlay: (open) => ipcRenderer.send('ui:overlay', Boolean(open)),

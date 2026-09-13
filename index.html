@@ -226,6 +226,8 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   .tab[data-error="1"] .dot { background: var(--danger) !important; }
+  /* 已休眠：整个标签淡一点就够了，名字和 logo 都照常显示（只动 opacity，不触发重排） */
+  .tab[data-hibernated="1"] { opacity: .62; }
 
   .spacer { flex: 1 1 auto; min-width: 12px; height: 100%; }
 
@@ -546,6 +548,9 @@
     transform: translateX(0);
     transition: transform var(--dur-3) var(--ease-drawer);
   }
+  /* 四档的分段控件（后台休眠时长）：只改格子数和滑块宽度，其余沿用上面三档那套 */
+  .seg[data-count="4"] { grid-template-columns: repeat(4, minmax(62px, 1fr)); }
+  .seg[data-count="4"] .seg-thumb { width: calc((100% - 4px) / 4); }
   .seg-thumb.instant { transition: none; }
   .seg-btn {
     position: relative;
@@ -649,6 +654,28 @@
       transform var(--dur-3) var(--ease-drawer);
   }
   #toast.err { border-color: var(--danger-border); color: var(--danger-fg); }
+  /* 带按钮的那种（比如「新版本已下载 / 立即重启」）：不会自动消失，要用户处理掉 */
+  #toast {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #toast-action {
+    flex: none;
+    height: 26px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 7px;
+    background: var(--accent);
+    color: #fff;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color var(--dur-2) var(--ease-out);
+  }
+  #toast-action:hover { background: var(--accent-hover); }
+  /* 常驻那条要能点，普通 toast 仍然不吃鼠标事件（免得挡住底下的东西） */
+  #toast.sticky { pointer-events: auto; }
 
   /* ---------- 动效总则 ----------
      1. 只动 transform / opacity（GPU 合成，不触发布局）；width/height/top/left/box-shadow 一律不做动画。
@@ -763,11 +790,30 @@
         </div>
 
         <div class="pref">
+          <div class="pref-row block">
+            <span>
+              <strong>后台标签自动休眠</strong>
+              <em>闲置超过设定时间的后台标签会释放掉它的页面进程（相当于省下一个浏览器标签的内存），
+                 点回去自动从原来的位置恢复。分屏里正显示的、正在出声的、正在加载的、
+                 输入框里有没发出去内容的标签都不会被休眠。</em>
+            </span>
+            <div class="seg" id="nap-seg" data-count="4" role="radiogroup" aria-label="后台标签自动休眠">
+              <span class="seg-thumb" id="nap-thumb" aria-hidden="true"></span>
+              <button class="seg-btn" type="button" role="radio" data-minutes="15">15 分钟</button>
+              <button class="seg-btn" type="button" role="radio" data-minutes="30">30 分钟</button>
+              <button class="seg-btn" type="button" role="radio" data-minutes="120">2 小时</button>
+              <button class="seg-btn" type="button" role="radio" data-minutes="off">不休眠</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="pref">
           <label class="pref-row">
             <input type="checkbox" id="pref-preload" />
             <span>
               <strong>启动时预加载所有标签</strong>
-              <em>开启后不用点开每个标签，标题和 logo 也会自己出现在上方的标签栏；代价是启动时同时加载多个站点，更占内存和流量。</em>
+              <em>默认关闭，启动时只加载标签栏当前要显示的那几栏。开启后会把所有标签的页面都真实加载一遍，
+                 标签栏上就能看到各站点自己的标题——logo 不开这个也有。代价是启动即多个渲染进程和多次真实请求。</em>
             </span>
           </label>
         </div>
@@ -794,7 +840,10 @@
     </section>
   </div>
 
-  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="toast" role="status" aria-live="polite">
+    <span id="toast-text"></span>
+    <button id="toast-action" type="button" hidden></button>
+  </div>
 
 <script src="icons.js"></script>
 <script>
@@ -830,6 +879,8 @@
   const overlay = $('overlay');
   const splitLayer = $('split-layer');
   const toastEl = $('toast');
+  const toastTextEl = $('toast-text');
+  const toastActionEl = $('toast-action');
 
   let state = { services: [], activeId: null, panes: [], weights: [], maxPanes: 4, preload: true, theme: 'system', hotkey: {}, version: '' };
   const status = new Map();   // id -> { loading, error, favicon, url, title }
@@ -840,15 +891,37 @@
   // ---------------- 小工具 ----------------
   let toastTimer = null;
   function toast(message, isError) {
-    toastEl.textContent = message;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTextEl.textContent = message;
+    toastActionEl.hidden = true;
+    toastActionEl.onclick = null;
+    toastEl.classList.remove('sticky');
     toastEl.classList.toggle('err', Boolean(isError));
     toastEl.classList.add('show');
-    if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
   }
 
+  /**
+   * 带一个按钮、不会自己消失的 toast。
+   * 用在「等用户做个决定」的场合（目前只有自动更新的「立即重启」）：
+   * 自动消失的提示很容易被错过，而这条错过了就等于更新白下了。
+   */
+  function toastAction(message, label, onClick) {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = null;
+    toastTextEl.textContent = message;
+    toastActionEl.textContent = label;
+    toastActionEl.hidden = false;
+    toastActionEl.onclick = () => {
+      toastEl.classList.remove('show', 'sticky');
+      if (onClick) onClick();
+    };
+    toastEl.classList.remove('err');
+    toastEl.classList.add('show', 'sticky');
+  }
+
   function statusOf(id) {
-    if (!status.has(id)) status.set(id, { loading: false, error: null, favicon: '', url: '', title: '' });
+    if (!status.has(id)) status.set(id, { loading: false, error: null, favicon: '', url: '', title: '', hibernated: false });
     return status.get(id);
   }
 
@@ -994,12 +1067,15 @@
     if (btn.className !== cls) btn.className = cls;
     const err = st.error ? '1' : '0';
     if (btn.dataset.error !== err) btn.dataset.error = err;
+    const naps = st.hibernated ? '1' : '0';
+    if (btn.dataset.hibernated !== naps) btn.dataset.hibernated = naps;
     const color = svc.color || '';
     if (btn.style.getPropertyValue('--dot') !== color) btn.style.setProperty('--dot', color);
 
     const marks = [];
     if (paneIndex >= 0 && state.panes.length > 1) marks.push(`分屏第 ${paneIndex + 1} 栏`);
     if (svc.id === state.activeId) marks.push('当前焦点');
+    if (st.hibernated) marks.push('已休眠 · 点开自动恢复');
     const title = (st.title ? svc.name + ' — ' + st.title : svc.name + '\n' + svc.url)
       + (marks.length ? '\n（' + marks.join(' · ') + '）' : '');
     if (btn.title !== title) btn.title = title;
@@ -1096,6 +1172,7 @@
     // 设置面板里的「预加载」开关、「外观主题」和「全局快捷键」跟着状态走
     const box = $('pref-preload');
     if (box) box.checked = state.preload !== false;
+    renderNap({ instant: true });
     renderTheme({ instant: true });
     renderHotkey();
   }
@@ -1202,11 +1279,22 @@
   document.addEventListener('pointerdown', () => { if (drag) finishDrag(); }, true);
 
   // ---------------- 分屏菜单 ----------------
+  // 已经提示过的版本号：state 每次广播都会走到这儿，不记一下会反复弹
+  let notifiedUpdate = '';
+
   function applyState(next) {
     if (!next) return;
     state = next;
     renderAll();
     if (overlayOpen) renderServiceList();
+    maybeNotifyUpdate(next.update);
+  }
+
+  function maybeNotifyUpdate(update) {
+    if (!update || update.status !== 'ready' || !update.version) return;
+    if (notifiedUpdate === update.version) return;
+    notifiedUpdate = update.version;
+    toastAction('新版本 ' + update.version + ' 已下载', '立即重启', () => window.api.installUpdate());
   }
 
   async function togglePane(id) {
@@ -1441,7 +1529,47 @@
     const res = await window.api.setPreload(on);
     if (!res || !res.ok) return toast('设置失败', true);
     state.preload = Boolean(res.preload);
-    toast(on ? '已开启预加载：所有标签的标题和 logo 会自动加载' : '已关闭预加载：点开标签才加载');
+    toast(on ? '已开启预加载：启动时把所有标签的页面都加载一遍' : '已关闭预加载：只加载标签栏当前要显示的那几栏');
+  });
+
+  // ---------------- 后台标签自动休眠 ----------------
+  const NAP_LABEL = { 15: '闲置 15 分钟', 30: '闲置 30 分钟', 120: '闲置 2 小时' };
+
+  function napValue() {
+    const nap = state.hibernate || {};
+    return nap.enabled === false ? 'off' : String(nap.minutes || 30);
+  }
+
+  function renderNap({ instant = false } = {}) {
+    const current = napValue();
+    const btns = Array.from(document.querySelectorAll('#nap-seg .seg-btn'));
+    let index = 0;
+    btns.forEach((btn, i) => {
+      const on = btn.dataset.minutes === current;
+      btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      if (on) index = i;
+    });
+    const thumb = $('nap-thumb');
+    if (!thumb) return;
+    thumb.classList.toggle('instant', instant);
+    thumb.style.transform = `translateX(${index * 100}%)`;
+    if (instant) {
+      void thumb.offsetWidth;
+      requestAnimationFrame(() => thumb.classList.remove('instant'));
+    }
+  }
+
+  document.querySelectorAll('#nap-seg .seg-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const want = btn.dataset.minutes;
+      const payload = want === 'off' ? { enabled: false } : { enabled: true, minutes: Number(want) };
+      const res = await window.api.setHibernate(payload);
+      if (!res || !res.ok) return toast((res && res.error) || '设置失败', true);
+      state.hibernate = res.hibernate;
+      renderNap();
+      toast(want === 'off' ? '已关闭后台休眠：所有打开过的标签都会一直留在内存里'
+        : '后台标签' + NAP_LABEL[Number(want)] + '后自动休眠，点回去自动恢复');
+    });
   });
 
   // ---------------- 外观主题 ----------------
@@ -1817,6 +1945,9 @@
     appVersion = initial.version;
     renderAll();
     renderServiceList();
+    // 更新有可能在页面加载好之前就下完了（比如刷新页面、或者下载特别快），
+    // 那条 state:changed 广播就错过了；首屏这里补判一次，否则提示永远不出现。
+    maybeNotifyUpdate(initial.update);
     // 首屏 layout 事件可能在页面加载完成前就发过了，这里主动补拉一次几何
     renderLayout(await window.api.getLayout());
   });

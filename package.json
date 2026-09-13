@@ -126,9 +126,19 @@
     },
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "OpenX123",
+        "repo": "aihub"
+      }
+    ]
   },
   "allowScripts": {
     "electron-winstaller": false
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

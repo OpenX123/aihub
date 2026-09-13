@@ -42,10 +42,15 @@ jobs:
           Get-ChildItem dist -Filter *.exe |
             Select-Object Name, @{ n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } }
 
+      # latest.yml 是 electron-updater 的更新源，blockmap 是差量下载用的；
+      # 少传一个都会让自动更新退化成每次全量下载，或者干脆找不到新版本。
       - uses: actions/upload-artifact@v6
         with:
           name: aihub-windows-x64
-          path: dist/*.exe
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
           if-no-files-found: error
           retention-days: 30
 
@@ -100,7 +105,11 @@ jobs:
       - name: 汇总产物
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' \) -exec cp {} release/ \;
+          # 注意只收 latest.yml（Windows）。mac 包没签名，Squirrel.Mac 必定校验失败，
+          # 放个 latest-mac.yml 出去等于给 mac 用户一个永远装不上的更新源。
+          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' \
+            -o -name '*.zip' -o -name 'latest.yml' -o -name '*.blockmap' \
+            \) -exec cp {} release/ \;
           ls -lh release
 
       - name: 创建或更新 Release
