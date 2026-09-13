@@ -22,7 +22,8 @@
 
 <img width="2237" height="1550" alt="image" src="https://github.com/user-attachments/assets/d41b897d-a8af-4bc9-9881-bea3b2b0b1b5" />
 
-> 截图中间那片空白处是各家站点自己的网页（它们是独立的原生视图，截图只抓到了应用自己的界面层）。
+> 每个站点都是独立加载的原生视图（不是把网页塞进同一个页面里渲染），
+> 所以各家的登录态、Cookie、缓存天生就是隔开的。
 
 > 开源（MIT）。内置的各家 logo 是各自公司的商标，本项目只用于标识服务入口，见 [NOTICE.md](NOTICE.md)。
 
