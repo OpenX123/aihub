@@ -337,11 +337,13 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 6px;
     flex: 0 0 auto;
     height: 30px;
     max-width: 210px;
-    padding: 0 12px;
+    /* 右边比左边窄：关闭按钮平时看不见但一直占位，
+       这里给它留 4px 就够，不然标签名后面会空出一大块 */
+    padding: 0 6px 0 12px;
     border: none;
     border-radius: 8px;
     background: transparent;
@@ -370,7 +372,9 @@
     display: grid;
     place-items: center;
     width: 16px; height: 16px;
-    margin-right: -4px;
+    /* 负 margin 把 16px 的按钮压成 12px 的占位槽：
+       不能直接 width:0，那样鼠标划过标签栏会整条抖 */
+    margin: 0 -2px 0 -2px;
     border: none;
     border-radius: 4px;
     background: transparent;
