@@ -148,17 +148,26 @@ pub fn create_view(
 /// 设置面板打开时站点视图全部移走，外壳就整窗露出来——和 Electron 版同构。
 pub fn create_shell(window: &Window, w: f64, h: f64) -> tauri::Result<Webview<Wry>> {
     let mut builder = WebviewBuilder::new(SHELL_LABEL, WebviewUrl::App("index.html".into()))
-        // **拖拽分屏的命门。**
+        // **只关外壳这一个 webview 的原生拖放处理器。**
         //
-        // Tauri 默认给 webview 装一个原生拖放处理器（用来接收从资源管理器拖进来的
-        // 文件）。它在系统层就把拖放事件吃掉了，页面里的 HTML5 DnD 根本收不到
-        // dragover/drop —— 表现就是拖过去一直显示禁止光标、投放区点不亮。
-        //
+        // Tauri 默认给每个 webview 装一个原生拖放处理器（接收从资源管理器拖进来的
+        // 文件）。它在系统层就把事件吃掉了，页面里的 HTML5 DnD 收不到 dragover/drop
+        // —— 表现就是拖标签过去一直显示禁止光标、投放区点不亮。
         // Tauri 文档原话：「This is required to use HTML5 drag and drop APIs
         // on the frontend on Windows.」
         //
-        // 代价是外壳不再能接收从系统拖进来的文件。这个应用没有那种需求，
-        // 而标签拖拽分屏是核心交互，取舍很明确。
+        // ## 为什么不影响「往聊天窗口拖文件上传」
+        //
+        // 这个开关是**按 webview** 生效的，而站点 webview（create_view）**没有关**，
+        // 而且它们盖在外壳之上。往 ChatGPT / Claude 页面拖文件时，落点在站点
+        // webview 上，走的是它自己那套原生处理器，完全不受这里影响。
+        //
+        // 真正失去的只有一处：往顶部标签栏那 44px 的窄条上拖文件。那里本来也没有
+        // 接收文件的功能，而标签拖拽分屏正是要在那儿起手。
+        //
+        // 注：窗口级的 WindowEvent::DragDrop 救不了这里——它就是由 webview 的
+        // drag_drop_handler 转发出来的（tauri-runtime-wry lib.rs:4862），
+        // 关了处理器窗口层同样收不到。试过，是死路。
         .disable_drag_drop_handler();
 
     // 调试构建里把图片加载失败的真实 URL 打出来。

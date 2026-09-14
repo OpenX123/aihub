@@ -829,13 +829,17 @@ pub fn services_add_builtin(app: AppHandle, id: String) -> CmdResult<serde_json:
 /// 靠模拟输入没法自动化测拖拽分屏，只能这样直接调函数。
 #[cfg(debug_assertions)]
 #[tauri::command]
-pub fn debug_eval(app: AppHandle, js: String) -> CmdResult<String> {
+pub fn debug_eval(app: AppHandle, js: String, target: Option<String>) -> CmdResult<String> {
     use std::sync::mpsc::channel;
 
     let window = app.get_window(MAIN_WINDOW).ok_or("没有主窗口")?;
+    // 默认打外壳；传 target 就打那个站点的 webview（验证站点侧的行为时要用）
+    let label = target
+        .map(|id| views::view_label(&id))
+        .unwrap_or_else(|| views::SHELL_LABEL.to_string());
     let shell = window
-        .get_webview(views::SHELL_LABEL)
-        .ok_or("没有外壳 webview")?;
+        .get_webview(&label)
+        .ok_or_else(|| format!("找不到 webview: {label}"))?;
 
     let (tx, rx) = channel();
     shell

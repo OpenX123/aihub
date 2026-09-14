@@ -404,27 +404,9 @@
   }
   .tab.drop-before::before { left: -3px; }
   .tab.drop-after::after { right: -3px; }
-  /* 已经在分屏布局里的标签：同样不加色条，只把底色压深一点点 + 数字角标 */
+  /* 已经在分屏布局里的标签：同样不加色条，只把底色压深一点点 */
   .tab.pane { color: var(--fg); background: var(--stripe); }
   .tab.pane.active { background: transparent; color: var(--fg-strong); }
-  .tab .pane-no {
-    flex: 0 0 auto;
-    min-width: 15px;
-    height: 15px;
-    padding: 0 3px;
-    border-radius: 8px;
-    background: var(--badge-bg);
-    color: var(--badge-fg);
-    font-size: 10px;
-    line-height: 15px;
-    text-align: center;
-    /* 刚加入分屏时角标弹一下（缩放+淡入，不动布局） */
-    animation: badgeIn var(--dur-3) var(--ease-out);
-  }
-  @keyframes badgeIn {
-    from { opacity: 0; transform: scale(.6); }
-    to { opacity: 1; transform: none; }
-  }
   .tab .dot {
     width: 8px; height: 8px;
     border-radius: 50%;
@@ -1324,7 +1306,7 @@
 
   // 标签栏用「就地更新」而不是每次重建：
   // 状态消息（标题 / favicon / 加载中）来得很频繁，整条重建会重排 + 重放动画，看起来就是卡顿 + 闪。
-  const tabNodes = new Map(); // id -> { btn, img, dot, spin, no }
+  const tabNodes = new Map(); // id -> { btn, img, dot, spin }
 
   function makeDot() {
     const dot = document.createElement('span');
@@ -1362,10 +1344,6 @@
     const spin = document.createElement('span');
     spin.className = 'spin';
     spin.hidden = true;
-    const no = document.createElement('span');
-    no.className = 'pane-no';
-    no.hidden = true;
-
     // × = 把这个标签从顶栏收起来（不是删除：服务和登录态都留着，设置里能放回来）
     const close = document.createElement('span');
     close.className = 'close';
@@ -1381,7 +1359,7 @@
     // × 自己不参与拖拽，否则按住它拖会拖出一个「幽灵标签」
     close.addEventListener('dragstart', (event) => { event.preventDefault(); event.stopPropagation(); });
 
-    btn.append(img, dot, name, spin, no, close);
+    btn.append(img, dot, name, spin, close);
     bindTabDrag(btn, svc.id);
 
     // favicon 加载失败就退回小圆点（只在还没换成内置 logo 时才退）
@@ -1391,7 +1369,7 @@
       dot.hidden = false;
     });
 
-    const node = { btn, img, dot, name, spin, no, close };
+    const node = { btn, img, dot, name, spin, close };
     tabNodes.set(svc.id, node);
     return node;
   }
@@ -1679,7 +1657,7 @@
   function syncTab(svc, node) {
     const st = statusOf(svc.id);
     const paneIndex = state.panes.indexOf(svc.id);
-    const { btn, img, dot, name, spin, no } = node;
+    const { btn, img, dot, name, spin } = node;
 
     const cls = 'tab'
       + (svc.id === state.activeId ? ' active' : '')
@@ -1719,12 +1697,6 @@
 
     const showSpin = Boolean(st.loading);
     if (spin.hidden !== !showSpin) spin.hidden = !showSpin;
-    const showNo = !showSpin && paneIndex >= 0 && state.panes.length > 1;
-    if (no.hidden !== !showNo) no.hidden = !showNo;
-    if (showNo) {
-      const text = String(paneIndex + 1);
-      if (no.textContent !== text) no.textContent = text;
-    }
   }
 
   function renderTabs() {

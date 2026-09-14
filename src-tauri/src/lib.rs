@@ -442,7 +442,7 @@ pub fn run() {
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(6));
                     match std::fs::read_to_string(&path) {
-                        Ok(js) => match commands::debug_eval(h, js) {
+                        Ok(js) => match commands::debug_eval(h, js, None) {
                             Ok(out) => println!("[selftest] {out}"),
                             Err(err) => println!("[selftest] 失败: {err}"),
                         },
