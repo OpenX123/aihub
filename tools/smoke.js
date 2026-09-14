@@ -599,6 +599,76 @@ module.exports = function runSmoke(ctx) {
       check('删除分屏中的服务：栏数与挂载视图数一致', ctx.attached.size === ctx.config.panes.length, [...ctx.attached]);
     }
 
+    // ---- 11b. 从顶栏收起 / 放回来 + 拖拽调整顺序 ----
+    // 「收起」和「删除」最容易被混成一件事，所以这里重点盯住两条：
+    // 收起来之后配置和 session 分区都还在（放回来登录态不用重登），以及顶栏不会被收空。
+    const hideProbe = ctx.addService({ name: 'Hide Probe', url: 'https://example.org/hide-probe' });
+    if (hideProbe.ok) {
+      ctx.activate(hideProbe.id, { focus: false });
+      await wait(300);
+      const hid = ctx.setServiceHidden(hideProbe.id, true);
+      check('收起标签成功', hid.ok === true, hid.error);
+      check('收起后不在可见列表里', !ctx.visibleServices().some((s) => s.id === hideProbe.id));
+      check('收起后服务本身还在（不是删除）',
+        ctx.config.services.some((s) => s.id === hideProbe.id && s.hidden === true));
+      check('收起后视图已销毁（不白占渲染进程）', !ctx.views.has(hideProbe.id));
+      check('收起后当前标签让给别人', ctx.config.activeId !== hideProbe.id, ctx.config.activeId);
+      check('收起后不再占分屏的一栏', !ctx.config.panes.includes(hideProbe.id), ctx.config.panes);
+      check('收起状态传给了页面',
+        ctx.publicState().services.some((s) => s.id === hideProbe.id && s.hidden === true));
+
+      await wait(800); // 等配置防抖落盘
+      const hiddenOnDisk = JSON.parse(fs.readFileSync(ctx.configFile(), 'utf8'));
+      check('收起状态已写入配置文件',
+        hiddenOnDisk.services.some((s) => s.id === hideProbe.id && s.hidden === true));
+
+      const back = ctx.setServiceHidden(hideProbe.id, false);
+      check('放回顶栏成功', back.ok === true, back.error);
+      check('放回后又出现在可见列表里', ctx.visibleServices().some((s) => s.id === hideProbe.id));
+
+      // 收到只剩一个：必须被拒。真收空了顶栏上一个能点的都没有。
+      const others = ctx.visibleServices().filter((s) => s.id !== hideProbe.id);
+      for (const svc of others) ctx.setServiceHidden(svc.id, true);
+      check('准备：只剩一个可见标签', ctx.visibleServices().length === 1,
+        ctx.visibleServices().map((s) => s.id));
+      const lastOne = ctx.setServiceHidden(ctx.visibleServices()[0].id, true);
+      check('最后一个标签不能收起', lastOne.ok === false, lastOne.error);
+      for (const svc of others) ctx.setServiceHidden(svc.id, false);
+      check('还原：收起的标签都放回来了', ctx.visibleServices().length === others.length + 1);
+
+      // 拖拽排序：前端只传可见的那些 id
+      const before = ctx.visibleServices().map((s) => s.id);
+      if (before.length >= 2) {
+        const swapped = before.slice();
+        swapped.unshift(swapped.pop()); // 把最后一个拖到最前面
+        const sorted = ctx.reorderServices(swapped);
+        check('调整顺序成功', sorted.ok === true, sorted.error);
+        check('新顺序已生效',
+          ctx.visibleServices().map((s) => s.id).join(',') === swapped.join(','),
+          ctx.visibleServices().map((s) => s.id));
+
+        // 隐藏的服务不在传过来的列表里，重排之后不能丢
+        ctx.setServiceHidden(hideProbe.id, true);
+        const visibleOnly = ctx.visibleServices().map((s) => s.id).reverse();
+        const withHidden = ctx.reorderServices(visibleOnly);
+        check('重排时收起来的服务不会丢', withHidden.ok === true
+          && ctx.config.services.some((s) => s.id === hideProbe.id), withHidden.error);
+        ctx.setServiceHidden(hideProbe.id, false);
+
+        // 少传一个 id：宁可整批不动，也不能把没传的那个悄悄丢掉
+        const partial = ctx.reorderServices(ctx.visibleServices().slice(1).map((s) => s.id));
+        check('顺序不完整时整批拒绝', partial.ok === false, partial.error);
+        check('拒绝之后服务一个没少', ctx.visibleServices().length === before.length,
+          ctx.visibleServices().map((s) => s.id));
+
+        // 还原成自检开始时的顺序，免得把用户排好的顺序冲掉
+        ctx.reorderServices(before);
+      }
+
+      ctx.removeService(hideProbe.id, true);
+      await wait(800);
+    }
+
     // ---- 12. 登录信息导出 / 导入（跨设备迁移） ----
     // 真实账号上的校验一律只读：清空 Cookie 这类破坏性步骤只在临时服务上做，
     // 免得自检把用户实际的登录态搞坏。
@@ -712,6 +782,19 @@ module.exports = function runSmoke(ctx) {
       check('准备：临时服务里写入一条 HttpOnly Cookie',
         (await pses.cookies.get({})).some((c) => c.name === 'probe_auth' && c.httpOnly));
 
+      // 再种三条用来验证「导出精简」：一条埋点、一条会话 Cookie（字段全是默认值）、
+      // 一条已过期的。前两条 Chromium 会照单收下，过期那条要绕开 cookies.set 的过期检查，
+      // 所以设成「1 秒后过期」再等它自然过期。
+      await pses.cookies.set({ url: 'https://example.net/', name: '_ga', value: 'GA1.1.9', path: '/' });
+      await pses.cookies.set({ url: 'https://example.net/', name: 'probe_plain', value: 'plain' });
+      await pses.cookies.set({
+        url: 'https://example.net/',
+        name: 'probe_expired',
+        value: 'gone',
+        expirationDate: Math.floor(Date.now() / 1000) + 1,
+      });
+      await wait(1500);
+
       const tempExport = await ctx.exportLogin({ file: tempFile, password: '' });
       check('往返：导出临时服务', tempExport.ok === true, tempExport.error);
       const tempParsed = JSON.parse(fs.readFileSync(tempFile, 'utf8'));
@@ -722,6 +805,27 @@ module.exports = function runSmoke(ctx) {
       check('往返：导出的本地存储带着刚写入的那条',
         Boolean(tempEntry) && tempEntry.origins.some((o) => o.localStorage && o.localStorage[storageKey] === storageValue),
         tempEntry && tempEntry.origins.map((o) => o.origin));
+
+      // 12.1b 导出精简：埋点 / 已过期的 Cookie 不进文件，取默认值的字段也不写。
+      // 这些东西对「换台电脑继续用」毫无用处，却能把文件撑到几倍大。
+      const junkCookie = tempEntry && tempEntry.cookies.find((c) => c.name === '_ga');
+      check('精简导出：埋点 Cookie 没有被导出', !junkCookie,
+        tempEntry && tempEntry.cookies.map((c) => c.name));
+      const expiredCookie = tempEntry && tempEntry.cookies.find((c) => c.name === 'probe_expired');
+      check('精简导出：已过期的 Cookie 没有被导出', !expiredCookie);
+      // 注意别把 sameSite 也算进「默认值」：Chromium 存的时候会把没写 SameSite 的 Cookie
+      // 落成 lax，而导入端 restoreCookie 的缺省是 unspecified，省掉它等于改了 Cookie 的语义。
+      const plainCookie = tempEntry && tempEntry.cookies.find((c) => c.name === 'probe_plain');
+      check('精简导出：取默认值的字段不写进文件',
+        Boolean(plainCookie) && !('path' in plainCookie) && !('secure' in plainCookie)
+        && !('httpOnly' in plainCookie), plainCookie);
+      check('精简导出：服务条目里没有多余的展示字段（颜色这类页面自己算得出来）',
+        Boolean(tempEntry) && !('color' in tempEntry), tempEntry && Object.keys(tempEntry));
+      check('精简导出：统计字段不写进文件',
+        Boolean(tempEntry) && !('skippedCookies' in tempEntry)
+        && tempEntry.origins.every((o) => !('skipped' in o)), tempEntry && Object.keys(tempEntry));
+      check('精简导出：跳过的条数回报给页面', typeof tempExport.skipped === 'number'
+        && tempExport.skipped >= 2, tempExport.skipped);
 
       // 破坏：清空 Cookie 并删掉本地存储
       await pses.clearStorageData({ storages: ['cookies'] });

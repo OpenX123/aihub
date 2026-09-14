@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld('api', {
   addService: (input) => ipcRenderer.invoke('services:add', input),
   updateService: (input) => ipcRenderer.invoke('services:update', input),
   removeService: (id, wipe) => ipcRenderer.invoke('services:remove', { id, wipe }),
+  // 从顶栏收起 / 放回来（服务和登录态都留着，只是不在标签栏上占位）
+  setServiceHidden: (id, hidden) => ipcRenderer.invoke('services:set-hidden', { id, hidden }),
+  // 拖拽调整标签顺序：传顶栏上看得见的那些 id，按新顺序
+  reorderServices: (ids) => ipcRenderer.invoke('services:reorder', { ids }),
 
   // 偏好：启动时预加载所有标签
   setPreload: (on) => ipcRenderer.invoke('config:set-preload', Boolean(on)),

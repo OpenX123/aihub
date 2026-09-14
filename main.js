@@ -175,6 +175,21 @@ const ALLOWED_PERMISSIONS = new Set([
 
 const isMac = process.platform === 'darwin';
 
+// 设置面板里的几个「一键换成这个」的预设。默认值仍然是 Alt+Space（mac 上就是 ⌥Space）：
+// ⌘Space 在 macOS 上默认属于聚焦搜索 Spotlight，直接拿它当默认会有相当一部分人一装上就
+// 「按了没反应」。所以把它摆在这里当推荐项，并写清要先去系统设置里让位。
+const HOTKEY_PRESETS = isMac
+  ? [
+    { accelerator: 'Alt+Space', label: '⌥ Space', note: '默认，不和系统冲突' },
+    { accelerator: 'Command+Space', label: '⌘ Space', note: '推荐，需先在「系统设置 → 键盘 → 键盘快捷键 → 聚焦」里关掉 Spotlight' },
+    { accelerator: 'Command+Shift+Space', label: '⌘ ⇧ Space', note: '想用 ⌘ 又不想动 Spotlight 就选它' },
+  ]
+  : [
+    { accelerator: 'Alt+Space', label: 'Alt + Space', note: '默认；被 PowerToys Run 占用时换下面两个' },
+    { accelerator: 'Ctrl+Space', label: 'Ctrl + Space', note: '注意中文输入法默认也用它切换中英文' },
+    { accelerator: 'Ctrl+Shift+Space', label: 'Ctrl + Shift + Space', note: '基本不会被占用' },
+  ];
+
 function log(...args) {
   if (!app.isPackaged) console.log('[aihub]', ...args);
 }
@@ -375,6 +390,8 @@ function loadConfig() {
       color: /^#[0-9a-f]{6}$/i.test(item.color || '') ? item.color : pickColor(services.length),
       custom: Boolean(item.custom),
       icon: icon || iconForService({ id, url, name }),
+      // 从标签栏收起来的服务：配置和登录态都留着，只是不在顶栏上占位
+      hidden: Boolean(item.hidden),
     });
   }
 
@@ -397,23 +414,32 @@ function loadConfig() {
   // 注意：被替换掉的服务（coze -> doubao）不继承「上次访问的地址」——
   // 那是另一个站点，继承过来会让新标签一打开就跳到旧站。
 
+  // 从顶栏收起来的服务不能当活动标签、也不能占分屏的一栏——
+  // 否则屏幕上摆着一个标签栏里根本点不到的页面
+  const shown = finalServices.filter((s) => !s.hidden);
+  // 万一配置被改成「全部收起」，就把第一个放回来，不然界面上一个标签都没有
+  if (!shown.length) {
+    finalServices[0].hidden = false;
+    shown.push(finalServices[0]);
+  }
   const rawActive = raw && typeof raw.activeId === 'string' ? remapId(raw.activeId) : null;
-  const activeId = finalServices.some((s) => s.id === rawActive) ? rawActive : finalServices[0].id;
+  const activeId = shown.some((s) => s.id === rawActive) ? rawActive : shown[0].id;
 
   // 分屏布局：v1 只有 activeId + splitId（双栏），v2 起是 panes + weights（最多 MAX_PANES 栏）
   let panes = [];
   let weights = [];
   if (raw && Array.isArray(raw.panes) && raw.panes.length) {
-    panes = sanitizePanes(raw.panes.map(remapId), finalServices);
+    panes = sanitizePanes(raw.panes.map(remapId), shown);
     weights = normalizeWeights(raw.weights, panes.length);
   } else {
     panes = [activeId];
     if (raw && typeof raw.splitId === 'string') {
-      const second = finalServices.find((s) => s.id === remapId(raw.splitId));
+      const second = shown.find((s) => s.id === remapId(raw.splitId));
       if (second && second.id !== activeId) panes.push(second.id);
     }
     weights = normalizeWeights(null, panes.length);
   }
+  if (!panes.length) panes = [activeId];
   // 聚焦的那一栏必须在布局里
   if (!panes.includes(activeId)) {
     if (panes.length < MAX_PANES) panes.push(activeId);
@@ -794,6 +820,7 @@ function publicState() {
       color: s.color,
       icon: s.icon || '',
       custom: Boolean(s.custom),
+      hidden: Boolean(s.hidden),
     })),
     activeId: config.activeId,
     panes: config.panes.slice(),
@@ -817,6 +844,7 @@ function publicState() {
       registered: Boolean(hotkeyState.registered),
       error: hotkeyState.error || '',
       defaultAccelerator: HOTKEY_DEFAULT,
+      presets: HOTKEY_PRESETS,
     },
     version: app.getVersion(),
     update: {
@@ -1164,7 +1192,8 @@ function stopPreload() {
 function preloadAll({ force = false } = {}) {
   stopPreload();
   if (!config.preload && !force) return;
-  const ids = config.services.map((s) => s.id);
+  // 收起来的服务不预加载：顶栏上点不到它，加载了也只是白占一个渲染进程
+  const ids = visibleServices().map((s) => s.id);
   let index = 0;
 
   const step = () => {
@@ -1390,7 +1419,8 @@ function buildSplitMenuTemplate() {
     { type: 'separator' },
   ];
 
-  for (const svc of config.services) {
+  // 收起来的服务不进分屏菜单：顶栏上都没有它，还能被分屏调出来会很怪
+  for (const svc of visibleServices()) {
     const index = panes.indexOf(svc.id);
     const inLayout = index >= 0;
     // Windows 的勾选标记和自定义图标抢同一个位置，所以把「第几栏」直接写进文字里，
@@ -1677,7 +1707,13 @@ function registerHotkey() {
     const ok = globalShortcut.isRegistered(accelerator)
       || globalShortcut.register(accelerator, onGlobalHotkey);
     if (!ok || !globalShortcut.isRegistered(accelerator)) {
-      hotkeyState.error = '这个组合键已被其它程序占用（例如 PowerToys Run、输入法、截图工具），换一个试试';
+      // 占用方两个平台完全不一样，写死 Windows 的例子会让 mac 用户去找不存在的程序。
+      // macOS 上最常见的就是 ⌘Space（聚焦搜索 Spotlight）和 ⌃Space（切换输入法），
+      // 这两个得先去「系统设置 → 键盘 → 键盘快捷键」里关掉，Aihub 抢不过系统。
+      hotkeyState.error = isMac
+        ? '这个组合键已被系统或其它程序占用（⌘Space 默认是聚焦搜索 Spotlight，⌃Space 是切换输入法）。'
+          + '到「系统设置 → 键盘 → 键盘快捷键」里关掉对应的项，或者换一个组合键'
+        : '这个组合键已被其它程序占用（例如 PowerToys Run、输入法、截图工具），换一个试试';
       console.error('[aihub] 全局快捷键注册失败:', accelerator);
       return hotkeyState;
     }
@@ -1836,26 +1872,35 @@ function hideToBackground() {
 // ---------------------------------------------------------------------------
 
 /**
- * 托盘图标：优先用小尺寸专用图（build/tray.png）。
+ * 托盘图标：优先用小尺寸专用图。
  *
  * 专门做一张而不是把 1024 的图标硬缩到 16px，是为了让菜单栏 / 托盘里的边缘别发灰；
- * 命名带上 @2x 的同名文件（tray@2x.png），macOS 上 Electron 会自己挑 Retina 那版。
+ * 命名带上 @2x 的同名文件，Electron 会在高分屏上自己挑 Retina 那版。
+ *
+ * Windows 托盘和 macOS 菜单栏要的尺寸差一倍：托盘按 16px 显示（图给 32 就够），
+ * 菜单栏是 22pt 高。之前两边共用 tray.png（32px），nativeImage 把它当成 32pt，
+ * 于是 macOS 菜单栏里的 logo 比旁边的电池、Wi-Fi 大了一圈——所以 mac 单独一张 22pt。
  */
 function trayImage() {
-  const trayFile = path.join(__dirname, 'build', 'tray.png');
-  if (fs.existsSync(trayFile)) {
-    const image = nativeImage.createFromPath(trayFile);
+  const files = isMac
+    ? ['tray-mac.png', 'tray.png']
+    : ['tray.png'];
+  for (const name of files) {
+    const file = path.join(__dirname, 'build', name);
+    if (!fs.existsSync(file)) continue;
+    const image = nativeImage.createFromPath(file);
     if (!image.isEmpty()) return image;
   }
   const candidates = [
     path.join(__dirname, 'build', 'icon.png'),
     path.join(__dirname, 'build', 'icon.ico'),
   ];
+  const side = isMac ? 22 : 16;
   for (const file of candidates) {
     if (!fs.existsSync(file)) continue;
     const image = nativeImage.createFromPath(file);
     if (image.isEmpty()) continue;
-    const resized = image.resize({ width: 16, height: 16, quality: 'best' });
+    const resized = image.resize({ width: side, height: side, quality: 'best' });
     if (!resized.isEmpty()) return resized;
   }
   return null;
@@ -2153,7 +2198,8 @@ function setZoom(delta, id) {
 }
 
 function cycleTab(step) {
-  const list = config.services;
+  // Ctrl+Tab / Ctrl+1..9 都按「顶栏上看得见的顺序」走，跳过收起来的服务
+  const list = visibleServices();
   if (!list.length) return;
   const index = list.findIndex((s) => s.id === config.activeId);
   const next = ((index < 0 ? 0 : index) + step + list.length) % list.length;
@@ -2161,7 +2207,7 @@ function cycleTab(step) {
 }
 
 function activateByIndex(index) {
-  const svc = config.services[index];
+  const svc = visibleServices()[index];
   if (svc) activate(svc.id);
 }
 
@@ -2322,6 +2368,103 @@ function updateService(input) {
   return { ok: true, id };
 }
 
+/** 顶栏上还在显示的服务（收起来的不算） */
+function visibleServices() {
+  return config.services.filter((svc) => !svc.hidden);
+}
+
+/**
+ * 把服务从顶栏收起 / 放回来。
+ *
+ * 和「删除服务」的区别：配置和 session 分区都原样留着，只是不在标签栏上占位，
+ * 所以放回来时登录态还在。收起来的服务在设置里的服务列表还能看到。
+ */
+function setServiceHidden(id, hidden) {
+  const svc = getService(id);
+  if (!svc) return { ok: false, error: '服务不存在' };
+  const next = Boolean(hidden);
+  if (Boolean(svc.hidden) === next) return { ok: true, id, hidden: next, state: publicState() };
+
+  // 最后一个还露在外面的服务不能收：收完顶栏就空了，人也没地方点回来
+  if (next && visibleServices().length <= 1) {
+    return { ok: false, error: '至少要留一个标签在顶栏上' };
+  }
+
+  svc.hidden = next;
+
+  if (next) {
+    // 收起来的服务不该继续占着分屏的一栏
+    if (config.panes.includes(id)) {
+      const remaining = config.panes.filter((paneId) => paneId !== id);
+      if (remaining.length) {
+        const weights = remaining.map((paneId) => config.weights[config.panes.indexOf(paneId)] || 0);
+        config.panes = remaining;
+        config.weights = normalizeWeights(weights, remaining.length);
+      } else {
+        config.panes = [visibleServices()[0].id];
+        config.weights = [1];
+      }
+    }
+    if (config.activeId === id) config.activeId = config.panes[0];
+    // 视图先销毁：收起来之后没有入口能点到它，留着就是白占一个渲染进程。
+    // 登录态在 session 分区里（磁盘上），销毁视图不影响，放回来重新加载即可。
+    destroyView(id);
+  }
+
+  saveConfig();
+  activate(config.activeId);
+  return { ok: true, id, hidden: next, state: publicState() };
+}
+
+/**
+ * 按前端拖出来的顺序重排服务。
+ *
+ * 前端只会传「顶栏上看得见的那些」的顺序，所以这里要把收起来的服务按原来的相对位置塞回去，
+ * 否则放回来的时候它们会全部跑到末尾。
+ */
+function reorderServices(ids) {
+  const order = Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
+  const byId = new Map(config.services.map((svc) => [svc.id, svc]));
+  const moved = [];
+  for (const id of order) {
+    const svc = byId.get(id);
+    if (!svc || svc.hidden || moved.includes(svc)) continue;
+    moved.push(svc);
+  }
+  if (moved.length !== visibleServices().length) {
+    return { ok: false, error: '顺序不完整，已忽略' };
+  }
+
+  // 收起来的服务锚在「它原本后面的第一个可见服务」前面，放回来时位置不会乱跳
+  const next = [];
+  let cursor = 0;
+  const hiddenBefore = new Map(); // 可见服务 id -> 排在它前面的隐藏服务
+  const trailing = [];
+  for (const svc of config.services) {
+    if (svc.hidden) {
+      const anchorSvc = config.services.slice(config.services.indexOf(svc) + 1).find((s) => !s.hidden);
+      if (anchorSvc) {
+        if (!hiddenBefore.has(anchorSvc.id)) hiddenBefore.set(anchorSvc.id, []);
+        hiddenBefore.get(anchorSvc.id).push(svc);
+      } else {
+        trailing.push(svc);
+      }
+    }
+  }
+  for (const svc of moved) {
+    for (const hiddenSvc of hiddenBefore.get(svc.id) || []) next.push(hiddenSvc);
+    next.push(svc);
+    cursor += 1;
+  }
+  next.push(...trailing);
+  if (next.length !== config.services.length) return { ok: false, error: '顺序不完整，已忽略' };
+
+  config.services = next;
+  saveConfig();
+  broadcast();
+  return { ok: true, count: cursor, state: publicState() };
+}
+
 function removeService(id, wipe) {
   const svc = getService(id);
   if (!svc) return { ok: false, error: '服务不存在' };
@@ -2384,18 +2527,35 @@ const LOGIN_FORMAT_LEGACY = ['ai-multi-hub-login'];
 const LOGIN_VERSION = 1;
 const STORAGE_READ_TIMEOUT = 20000;
 
+// 本地存储里真正和登录有关的是 token / 用户 id 这类短字符串。
+// 各家还会把「会话列表、模型目录、草稿」整个 JSON 塞进 localStorage，动辄几百 KB，
+// 迁过去也会被服务端刷新掉——所以超过这个长度的值直接跳过，只搬登录态。
+const STORAGE_VALUE_MAX = 8 * 1024;
+
 const STORAGE_DUMP_JS = `(() => {
+  const MAX = ${STORAGE_VALUE_MAX};
+  // 埋点 SDK 在 localStorage 里也有一份（和 Cookie 那份同名前缀），一起跳过
+  const JUNK = /^(_ga|_gid|_gcl_|_fbp|_hj|ajs_|amplitude_|mp_|mixpanel|sensorsdata|sajssdk|Hm_l|_uet)/;
   const dump = (store) => {
-    const out = {};
+    const out = { entries: {}, skipped: 0 };
     try {
       for (let i = 0; i < store.length; i += 1) {
         const key = store.key(i);
-        out[key] = store.getItem(key);
+        const value = store.getItem(key);
+        if (JUNK.test(key) || (value != null && value.length > MAX)) { out.skipped += 1; continue; }
+        out.entries[key] = value;
       }
     } catch (err) { /* 某些页面禁止访问，忽略 */ }
     return out;
   };
-  return { origin: location.origin, localStorage: dump(localStorage), sessionStorage: dump(sessionStorage) };
+  const ls = dump(localStorage);
+  const ss = dump(sessionStorage);
+  return {
+    origin: location.origin,
+    localStorage: ls.entries,
+    sessionStorage: ss.entries,
+    skipped: ls.skipped + ss.skipped,
+  };
 })()`;
 
 function storageRestoreJs(payload) {
@@ -2451,9 +2611,9 @@ async function readStorages(svc) {
     if (!data || !data.origin) return [];
     return [{
       origin: data.origin,
-      pageUrl: url,
       localStorage: data.localStorage || {},
       sessionStorage: data.sessionStorage || {},
+      skipped: Number(data.skipped) || 0,
     }];
   } catch (err) {
     log('读取本地存储失败:', svc.id, err.message);
@@ -2461,17 +2621,46 @@ async function readStorages(svc) {
   }
 }
 
+// 埋点 / 广告类 Cookie 的名字。这些和登录态无关，但数量常常比登录 Cookie 还多
+// （一个站点动辄十几条 _ga_XXXX），是导出文件里最主要的噪音来源。
+// 只列「第三方统计工具的固定命名」，宁可漏掉也不误伤：判断规则见 isJunkCookie。
+const JUNK_COOKIE_PREFIXES = [
+  '_ga', '_gid', '_gat', '_gcl_', '__utm', '_dc_gtm_',   // Google Analytics / Ads
+  '_fbp', '_fbc',                                        // Meta Pixel
+  '_clck', '_clsk', 'MUID',                              // Microsoft Clarity
+  '_hjSession', '_hj',                                   // Hotjar
+  'ajs_', 'amplitude_', 'mp_', 'mixpanel',               // Segment / Amplitude / Mixpanel
+  '_uetsid', '_uetvid',                                  // Bing UET
+  'sensorsdata', 'Hm_lvt_', 'Hm_lpvt_',                  // 神策 / 百度统计
+  'sajssdk', '_tt_enable_cookie', '_ttp',                // TikTok Pixel
+];
+
+function isJunkCookie(name) {
+  const key = String(name || '');
+  return JUNK_COOKIE_PREFIXES.some((prefix) => key.startsWith(prefix));
+}
+
+/**
+ * 精简一条 Cookie：只写「和默认值不一样」的字段。
+ *
+ * 导入端 restoreCookie 本来就会把缺省字段补回去（path 补 '/'、secure/httpOnly 补 false、
+ * sameSite 补 unspecified），所以把默认值写进文件纯属占地方——一条 Cookie 八个字段里
+ * 通常有五个是默认值。返回 null 表示这条不用导（已过期 / 埋点）。
+ */
 function cleanCookie(cookie) {
-  const out = {
-    name: cookie.name,
-    value: cookie.value,
-    domain: cookie.domain || '',
-    path: cookie.path || '/',
-    secure: Boolean(cookie.secure),
-    httpOnly: Boolean(cookie.httpOnly),
-    sameSite: cookie.sameSite || 'unspecified',
-    hostOnly: Boolean(cookie.hostOnly),
-  };
+  if (!cookie || !cookie.name) return null;
+  // 已经过期的 Cookie 导过去也会被 restoreCookie 判成 expired 丢掉，不如现在就不写
+  if (typeof cookie.expirationDate === 'number' && cookie.expirationDate * 1000 < Date.now()) return null;
+  if (isJunkCookie(cookie.name)) return null;
+
+  const out = { name: cookie.name, value: cookie.value };
+  if (cookie.domain) out.domain = cookie.domain;
+  if (cookie.path && cookie.path !== '/') out.path = cookie.path;
+  if (cookie.secure) out.secure = true;
+  if (cookie.httpOnly) out.httpOnly = true;
+  if (cookie.sameSite && cookie.sameSite !== 'unspecified') out.sameSite = cookie.sameSite;
+  // hostOnly 必须显式写：它决定导入时带不带 domain，补错了 Cookie 会挂到父域上
+  if (cookie.hostOnly) out.hostOnly = true;
   if (typeof cookie.expirationDate === 'number') out.expirationDate = cookie.expirationDate;
   return out;
 }
@@ -2479,19 +2668,27 @@ function cleanCookie(cookie) {
 /** 导出用：采集一个服务的登录信息 */
 async function collectLoginData(svc) {
   let cookies = [];
+  let skipped = 0;
   try {
-    cookies = (await sessionOf(svc.id).cookies.get({})).map(cleanCookie);
+    const raw = await sessionOf(svc.id).cookies.get({});
+    for (const cookie of raw) {
+      const clean = cleanCookie(cookie);
+      if (clean) cookies.push(clean);
+      else skipped += 1;
+    }
   } catch (err) {
     log('读取 Cookie 失败:', svc.id, err.message);
   }
-  return {
+  const entry = {
     id: svc.id,
     name: svc.name,
     url: svc.url,
-    color: svc.color,
     cookies,
     origins: await readStorages(svc),
   };
+  // color 只是标签栏上的小圆点颜色，导入端会用本地服务自己的配色，没必要跟着走
+  entry.skippedCookies = skipped;
+  return entry;
 }
 
 function countStorages(entry) {
@@ -2643,7 +2840,11 @@ async function exportLogin(input) {
     version: LOGIN_VERSION,
     exportedAt: new Date().toISOString(),
     app: { name: 'Aihub', version: app.getVersion() },
-    services,
+    // skippedCookies / skipped 只是给导出结果做统计的，别写进文件
+    services: services.map(({ skippedCookies, ...svc }) => ({
+      ...svc,
+      origins: svc.origins.map(({ skipped, ...origin }) => origin),
+    })),
   };
 
   const body = password ? encryptLogin(payload, password) : payload;
@@ -2656,7 +2857,12 @@ async function exportLogin(input) {
 
   const cookieCount = services.reduce((sum, s) => sum + s.cookies.length, 0);
   const storageCount = services.reduce((sum, s) => sum + s.origins.reduce((n, o) => n + countStorages(o), 0), 0);
-  log('导出登录信息:', file, `${services.length} 个服务 / ${cookieCount} 条 Cookie / ${storageCount} 项本地存储`);
+  // 被过滤掉的（过期 / 埋点 / 超大缓存值）单独报一个数：
+  // 不说清楚的话，"20 条 Cookie" 和浏览器里看到的数量对不上，会让人以为导漏了
+  const skipped = services.reduce((sum, s) => sum + (s.skippedCookies || 0)
+    + s.origins.reduce((n, o) => n + (o.skipped || 0), 0), 0);
+  log('导出登录信息:', file,
+    `${services.length} 个服务 / ${cookieCount} 条 Cookie / ${storageCount} 项本地存储 / 跳过 ${skipped} 项`);
   return {
     ok: true,
     file,
@@ -2664,6 +2870,7 @@ async function exportLogin(input) {
     services: services.length,
     cookies: cookieCount,
     storages: storageCount,
+    skipped,
     bytes: fs.statSync(file).size,
   };
 }
@@ -2796,6 +3003,14 @@ function attachShortcuts(wc) {
     const mod = isMac ? input.meta : input.control;
     const key = String(input.key || '').toLowerCase();
 
+    // macOS 上 ⌘Tab 是系统的程序切换器，按下去根本到不了应用里，
+    // 所以标签轮换在 mac 上额外认 ⌃Tab（Safari / Chrome 也是这个）。
+    if (isMac && input.control && !input.meta && key === 'tab') {
+      event.preventDefault();
+      cycleTab(input.shift ? -1 : 1);
+      return;
+    }
+
     if (!mod) {
       if (key === 'f5') {
         event.preventDefault();
@@ -2927,6 +3142,14 @@ function installIpc() {
   ipcMain.handle('services:remove', (_event, payload) => {
     const data = payload || {};
     return removeService(String(data.id || ''), Boolean(data.wipe));
+  });
+  ipcMain.handle('services:set-hidden', (_event, payload) => {
+    const data = payload || {};
+    return setServiceHidden(String(data.id || ''), Boolean(data.hidden));
+  });
+  ipcMain.handle('services:reorder', (_event, payload) => {
+    const data = payload || {};
+    return reorderServices(data.ids);
   });
 
   ipcMain.handle('login:export', async (_event, payload) => {
@@ -3202,6 +3425,9 @@ if (!gotLock) {
           focusPane,
           addService,
           removeService,
+          setServiceHidden,
+          reorderServices,
+          visibleServices,
           migrateServices,
           setPreload,
           setHibernate,

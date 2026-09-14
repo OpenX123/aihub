@@ -175,6 +175,47 @@
     font-weight: 600;
   }
   .tab.active .name { letter-spacing: .1px; }
+  /* 关闭按钮：平时不占视觉，鼠标进标签才出现。
+     用 width 从 0 撑开会让整条标签栏抖，所以位置固定、只切换 opacity。 */
+  .tab .close {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 16px; height: 16px;
+    margin-right: -4px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-2) var(--ease-out), background-color var(--dur-1) var(--ease-out);
+  }
+  .tab .close svg { width: 9px; height: 9px; }
+  @media (hover: hover) and (pointer: fine) {
+    .tab:hover .close { opacity: .75; pointer-events: auto; }
+    .tab .close:hover { opacity: 1; background: var(--badge-bg); }
+  }
+  /* 触屏 / 没有 hover 的设备上一直显示，否则根本收不起来 */
+  @media not all and (hover: hover) {
+    .tab .close { opacity: .75; pointer-events: auto; }
+  }
+  /* 拖动中的标签：半透明跟手，落点用一条竖线提示 */
+  .tab.dragging { opacity: .4; }
+  .tab.drop-before::before,
+  .tab.drop-after::after {
+    content: '';
+    position: absolute;
+    top: 4px; bottom: 4px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--accent);
+  }
+  .tab.drop-before::before { left: -3px; }
+  .tab.drop-after::after { right: -3px; }
   /* 已经在分屏布局里的标签：同样不加色条，只把底色压深一点点 + 数字角标 */
   .tab.pane { color: var(--fg); background: var(--stripe); }
   .tab.pane.active { background: transparent; color: var(--fg-strong); }
@@ -461,6 +502,10 @@
   button.btn:disabled { opacity: .45; cursor: default; transform: none; }
 
   .svc-list { display: flex; flex-direction: column; gap: 8px; }
+  /* 从顶栏收起来的服务：整行压暗，一眼能和还在顶栏上的分开 */
+  .svc-row.hidden-svc { opacity: .62; }
+  .svc-row.hidden-svc:hover { opacity: 1; }
+  .pill.off { color: var(--fg-dim); }
 
   /* ---- 账号迁移 ---- */
   .migrate {
@@ -587,6 +632,14 @@
     cursor: pointer;
   }
   .hk-row input.hk-key.recording { color: var(--accent); border-color: var(--accent); }
+  .hk-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .hk-presets button {
+    font: inherit; font-size: 12px; cursor: pointer;
+    padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--divider); background: transparent; color: var(--fg-dim);
+  }
+  .hk-presets button:hover { border-color: var(--divider-hover); color: var(--fg); }
+  .hk-presets button.on { border-color: var(--accent); color: var(--accent); }
   .hk-hint { font-size: 12px; line-height: 1.6; color: var(--fg-dim); }
   .hk-hint.ok { color: var(--ok-fg); }
   .hk-hint.warn { color: var(--warn-fg); }
@@ -772,6 +825,7 @@
               <input type="text" id="hk-key" class="hk-key" readonly aria-label="唤出快捷键" />
               <button class="btn ghost" id="hk-reset" type="button">恢复默认</button>
             </div>
+            <div class="hk-presets" id="hk-presets"></div>
             <div class="hk-hint" id="hk-hint"></div>
             <label class="hk-sub">
               <input type="checkbox" id="hk-pintop" />
@@ -829,9 +883,7 @@
             <button class="btn" id="btn-import-login">导入登录信息</button>
           </div>
           <div class="migrate-note" id="migrate-note">
-            文件里包含 Cookie 和页面本地存储（等于账号凭证），请只在自己信任的设备之间传递；
-            填了密码就会用 AES-256-GCM 加密，导入时需要同一个密码。
-            导入会覆盖同名的登录信息，不影响没导出的服务。
+            文件里是 Cookie 和本地存储（等同账号凭证），只在自己信任的设备之间传递；填了密码就用 AES-256-GCM 加密。
           </div>
           <div id="migrate-confirm" hidden></div>
         </div>
@@ -902,22 +954,26 @@
   }
 
   /**
-   * 带一个按钮、不会自己消失的 toast。
-   * 用在「等用户做个决定」的场合（目前只有自动更新的「立即重启」）：
+   * 带一个按钮的 toast。
+   * 默认不会自己消失，用在「等用户做个决定」的场合（比如自动更新的「立即重启」）：
    * 自动消失的提示很容易被错过，而这条错过了就等于更新白下了。
+   * 传 ms 则是「撤销」这类：不做决定也没关系，过一会儿自己收掉。
    */
-  function toastAction(message, label, onClick) {
+  function toastAction(message, label, onClick, ms) {
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = null;
     toastTextEl.textContent = message;
     toastActionEl.textContent = label;
     toastActionEl.hidden = false;
     toastActionEl.onclick = () => {
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = null;
       toastEl.classList.remove('show', 'sticky');
       if (onClick) onClick();
     };
     toastEl.classList.remove('err');
     toastEl.classList.add('show', 'sticky');
+    if (ms > 0) toastTimer = setTimeout(() => toastEl.classList.remove('show', 'sticky'), ms);
   }
 
   function statusOf(id) {
@@ -1014,6 +1070,7 @@
     const btn = document.createElement('button');
     btn.className = 'tab';
     btn.dataset.id = svc.id;
+    btn.draggable = true;
     btn.addEventListener('click', () => window.api.activate(svc.id));
     // 中键 = 重新加载该标签
     btn.addEventListener('auxclick', (event) => {
@@ -1042,7 +1099,24 @@
     const no = document.createElement('span');
     no.className = 'pane-no';
     no.hidden = true;
-    btn.append(img, dot, name, spin, no);
+
+    // × = 把这个标签从顶栏收起来（不是删除：服务和登录态都留着，设置里能放回来）
+    const close = document.createElement('span');
+    close.className = 'close';
+    close.setAttribute('role', 'button');
+    close.title = '从顶栏收起（登录状态保留，可在设置里放回来）';
+    close.innerHTML = svg('close');
+    close.addEventListener('click', async (event) => {
+      // 不加这两句，点 × 会先把这个标签切成当前标签，再收起来
+      event.preventDefault();
+      event.stopPropagation();
+      await hideTab(svc.id, svc.name);
+    });
+    // × 自己不参与拖拽，否则按住它拖会拖出一个「幽灵标签」
+    close.addEventListener('dragstart', (event) => { event.preventDefault(); event.stopPropagation(); });
+
+    btn.append(img, dot, name, spin, no, close);
+    bindTabDrag(btn, svc.id);
 
     // favicon 加载失败就退回小圆点（只在还没换成内置 logo 时才退）
     img.addEventListener('error', () => {
@@ -1051,9 +1125,87 @@
       dot.hidden = false;
     });
 
-    const node = { btn, img, dot, name, spin, no };
+    const node = { btn, img, dot, name, spin, no, close };
     tabNodes.set(svc.id, node);
     return node;
+  }
+
+  // ---- 拖拽调整标签顺序 ----
+  // 用原生 HTML5 拖放而不是 pointer 事件：标签栏本身是 -webkit-app-region: drag 的窗口拖动区，
+  // 自己用 pointermove 模拟会和「拖动窗口」打架；draggable 元素的拖拽优先级更高，不会误拖窗口。
+  let tabDrag = null; // { id }
+
+  function clearDropMarks() {
+    for (const node of tabNodes.values()) {
+      node.btn.classList.remove('drop-before', 'drop-after');
+    }
+  }
+
+  function bindTabDrag(btn, id) {
+    btn.addEventListener('dragstart', (event) => {
+      tabDrag = { id };
+      btn.classList.add('dragging');
+      try {
+        event.dataTransfer.effectAllowed = 'move';
+        // Firefox/Chromium 都要求 dragstart 里写点东西，否则后续 drag 事件不触发
+        event.dataTransfer.setData('text/plain', id);
+      } catch (err) { /* 忽略：拿不到 dataTransfer 也不影响自家的拖拽状态 */ }
+    });
+
+    btn.addEventListener('dragover', (event) => {
+      if (!tabDrag || tabDrag.id === id) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      // 落在标签的左半边就插到它前面，右半边就插到后面
+      const rect = btn.getBoundingClientRect();
+      const after = event.clientX > rect.left + rect.width / 2;
+      clearDropMarks();
+      btn.classList.add(after ? 'drop-after' : 'drop-before');
+    });
+
+    btn.addEventListener('dragleave', () => {
+      btn.classList.remove('drop-before', 'drop-after');
+    });
+
+    btn.addEventListener('drop', async (event) => {
+      if (!tabDrag || tabDrag.id === id) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = btn.getBoundingClientRect();
+      const after = event.clientX > rect.left + rect.width / 2;
+      const dragged = tabDrag.id;
+      clearDropMarks();
+      await moveTab(dragged, id, after);
+    });
+
+    // dragend 一定会触发（包括拖到窗口外松手），收尾放这里才不会留下半透明的标签
+    btn.addEventListener('dragend', () => {
+      btn.classList.remove('dragging');
+      clearDropMarks();
+      tabDrag = null;
+    });
+  }
+
+  async function moveTab(dragId, targetId, after) {
+    // 只排「顶栏上看得见的」，主进程会把收起来的服务按原相对位置塞回去
+    const ids = state.services.filter((s) => !s.hidden).map((s) => s.id);
+    const from = ids.indexOf(dragId);
+    if (from < 0) return;
+    ids.splice(from, 1);
+    const at = ids.indexOf(targetId);
+    if (at < 0) return;
+    ids.splice(after ? at + 1 : at, 0, dragId);
+    const res = await window.api.reorderServices(ids);
+    if (!res || !res.ok) toast((res && res.error) || '排序失败', true);
+  }
+
+  async function hideTab(id, name) {
+    const res = await window.api.setServiceHidden(id, true);
+    if (!res || !res.ok) return toast((res && res.error) || '收起失败', true);
+    toastAction('已收起「' + name + '」，可在设置里放回来', '撤销', async () => {
+      const back = await window.api.setServiceHidden(id, false);
+      if (!back || !back.ok) toast((back && back.error) || '放回失败', true);
+    }, 6000);
   }
 
   function syncTab(svc, node) {
@@ -1108,15 +1260,16 @@
   }
 
   function renderTabs() {
-    // 删掉已经不在的服务
-    const alive = new Set(state.services.map((s) => s.id));
+    // 删掉已经不在的服务，以及从顶栏收起来的服务（节点一起丢掉，放回来时重建）
+    const shown = state.services.filter((svc) => !svc.hidden);
+    const alive = new Set(shown.map((s) => s.id));
     for (const [id, node] of tabNodes) {
       if (!alive.has(id)) {
         node.btn.remove();
         tabNodes.delete(id);
       }
     }
-    state.services.forEach((svc, index) => {
+    shown.forEach((svc, index) => {
       const node = tabNodes.get(svc.id) || tabNodeFor(svc);
       syncTab(svc, node);
       // 顺序只在真的不对时才动 DOM
@@ -1124,6 +1277,11 @@
         tabsEl.insertBefore(node.btn, tabsEl.children[index] || null);
       }
     });
+    // 只剩一个标签时藏掉 ×：收起来顶栏就空了，主进程也会拒绝
+    const only = shown.length <= 1;
+    for (const node of tabNodes.values()) {
+      if (node.close) node.close.hidden = only;
+    }
   }
 
   function renderTools() {
@@ -1161,8 +1319,11 @@
     } else if (st.loading) {
       stageMsg.textContent = '正在打开「' + active.name + '」…';
     } else {
-      const acc = (state.hotkey && state.hotkey.accelerator) || 'Alt+Space';
-      stageMsg.textContent = '全局唤出：' + acc + ' · Ctrl+Tab 切换标签 · Ctrl+1~9 直达 · F5 刷新 · Ctrl+, 设置';
+      const acc = prettyAccel((state.hotkey && state.hotkey.accelerator) || 'Alt+Space');
+      const mod = IS_MAC ? '⌘' : 'Ctrl+';
+      stageMsg.textContent = '全局唤出：' + acc
+        + ' · ' + (IS_MAC ? '⌃Tab' : 'Ctrl+Tab') + ' 切换标签'
+        + ' · ' + mod + '1~9 直达 · F5 刷新 · ' + mod + ', 设置';
     }
   }
 
@@ -1362,7 +1523,9 @@
 
   function serviceRow(svc) {
     const row = document.createElement('div');
-    row.className = 'svc-row' + (confirming.has(svc.id) ? ' confirming' : '');
+    row.className = 'svc-row'
+      + (confirming.has(svc.id) ? ' confirming' : '')
+      + (svc.hidden ? ' hidden-svc' : '');
 
     // 左侧：服务 logo（内置图标优先，没有就用标签颜色的小圆点）
     const badge = document.createElement('span');
@@ -1441,6 +1604,20 @@
         window.api.devtools(svc.id);
       });
 
+      // 收起 / 放回：只影响标签栏是否显示，服务配置和登录态都原样留着，
+      // 所以这里和「删除」分开放，避免用户为了让顶栏清爽而把登录态删掉。
+      const vis = document.createElement('button');
+      vis.className = 'btn ghost';
+      vis.textContent = svc.hidden ? '放回顶栏' : '从顶栏收起';
+      vis.title = svc.hidden
+        ? '重新在标签栏显示这个服务'
+        : '标签栏上不再显示，服务配置和登录态都保留，随时可以放回来';
+      vis.addEventListener('click', async () => {
+        const res = await window.api.setServiceHidden(svc.id, !svc.hidden);
+        if (!res || !res.ok) return toast((res && res.error) || '操作失败', true);
+        toast(svc.hidden ? '已放回「' + svc.name + '」' : '已收起「' + svc.name + '」');
+      });
+
       const del = document.createElement('button');
       del.className = 'btn danger';
       del.textContent = '删除';
@@ -1449,7 +1626,7 @@
         renderServiceList();
       });
 
-      actions.append(save, dev, del);
+      actions.append(save, vis, dev, del);
     }
 
     row.append(badge, name, url, actions);
@@ -1473,11 +1650,19 @@
     listEl.classList.toggle('enter', stagger);
     state.services.forEach((svc, index) => {
       const row = serviceRow(svc);
+      const actionsEl = row.querySelector('div.actions');
+      if (svc.hidden) {
+        const tag = document.createElement('span');
+        tag.className = 'pill off';
+        tag.textContent = '已收起';
+        tag.title = '不在标签栏显示；登录态还在';
+        actionsEl.prepend(tag);
+      }
       if (!svc.custom) {
         const tag = document.createElement('span');
         tag.className = 'pill';
         tag.textContent = '内置';
-        row.querySelector('div.actions').prepend(tag);
+        actionsEl.prepend(tag);
       }
       // 错开 35ms 依次落位（只动画一次；后面普通重渲染不会再放动画）
       row.style.setProperty('--i', String(Math.min(index, 8)));
@@ -1631,11 +1816,26 @@
   // 注册失败（被别的程序占用）也会立刻把原因显示出来，而不是「按了没反应」。
   const hkKey = $('hk-key');
   const hkHint = $('hk-hint');
+  const hkPresets = $('hk-presets');
   let recording = false;
 
+  const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+
   // 提示语里的修饰键写法要跟着平台走：macOS 用户看到「Ctrl」会去找键盘上不存在的键
-  const MODIFIER_HINT = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '')
-    ? '⌘ / ⌥ / ⇧' : 'Ctrl / Alt / Shift';
+  const MODIFIER_HINT = IS_MAC ? '⌘ / ⌥ / ⇧' : 'Ctrl / Alt / Shift';
+
+  // Electron 的 accelerator 里 Alt 在 mac 上就是 ⌥、Super 就是 ⌘，但字面量还是英文单词。
+  // mac 用户看惯了符号，"Alt+Space" 会让人以为要找一个叫 Alt 的键（键帽上写的是 option/⌥）。
+  const MAC_SYMBOLS = { Ctrl: '⌃', Control: '⌃', Alt: '⌥', Option: '⌥', Shift: '⇧', Command: '⌘', Cmd: '⌘', Super: '⌘', Meta: '⌘' };
+  /** "Command+Shift+Space" -> mac: "⌘⇧Space"；其它平台原样返回 */
+  function prettyAccel(acc) {
+    const text = String(acc || '');
+    if (!IS_MAC || !text) return text;
+    const parts = text.split('+');
+    const key = parts.pop();
+    // mac 的习惯是修饰键符号连着写、和主键之间不加加号
+    return parts.map((m) => MAC_SYMBOLS[m] || (m + '+')).join('') + key;
+  }
 
   /** 键盘事件 -> Electron accelerator 里主键的名字（认不出返回空） */
   function keyNameFromEvent(event) {
@@ -1663,8 +1863,36 @@
     if (event.ctrlKey) mods.push('Ctrl');
     if (event.altKey) mods.push('Alt');
     if (event.shiftKey) mods.push('Shift');
-    if (event.metaKey) mods.push('Super');
+    // mac 上 metaKey 就是 ⌘。Electron 的 Super 在 mac 上也会映射到 ⌘，但归一化后写法不同，
+    // 录出来的 'Super+Space' 和预设里的 'Command+Space' 对不上，选中态就点不亮了。
+    if (event.metaKey) mods.push(IS_MAC ? 'Command' : 'Super');
     return mods.concat(key).join('+');
+  }
+
+  /**
+   * 常用组合键的一排快捷选项。列表由主进程按平台给（mac 上第二项就是 ⌘Space），
+   * 点一下直接套用；注册失败的原因照样会显示在下面的提示行里。
+   */
+  function renderPresets(current) {
+    const list = (state.hotkey && state.hotkey.presets) || [];
+    hkPresets.textContent = '';
+    hkPresets.hidden = !list.length;
+    for (const item of list) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = item.label || prettyAccel(item.accelerator);
+      btn.title = item.note || '';
+      if (item.accelerator === current) btn.classList.add('on');
+      btn.addEventListener('click', async () => {
+        if (item.accelerator === current) return;
+        const res = await applyHotkey({ accelerator: item.accelerator });
+        if (!res) return;
+        toast(res.registered
+          ? '唤出快捷键已改为 ' + prettyAccel(state.hotkey.accelerator)
+          : (res.error || (prettyAccel(item.accelerator) + ' 被占用，换一个试试')), !res.registered);
+      });
+      hkPresets.appendChild(btn);
+    }
   }
 
   function renderHotkey() {
@@ -1676,7 +1904,8 @@
     $('hk-tray').checked = hk.tray !== false;
     $('hk-close').checked = hk.closeToTray !== false;
     // 正在录制时不覆盖用户手上按的内容
-    if (!recording) hkKey.value = acc;
+    if (!recording) hkKey.value = prettyAccel(acc);
+    renderPresets(acc);
 
     let text = '';
     let kind = '';
@@ -1685,7 +1914,7 @@
     } else if (!enabled) {
       text = '已关闭：不再占用系统级快捷键，窗口只能从任务栏或托盘唤出。';
     } else if (hk.registered) {
-      text = '已生效：在任何程序里按 ' + acc + ' 都能唤出 / 收起窗口'
+      text = '已生效：在任何程序里按 ' + prettyAccel(acc) + ' 都能唤出 / 收起窗口'
         + (hk.pinTop !== false ? '（唤出时最高优先级置顶）' : '') + '。';
       kind = 'ok';
     } else {
@@ -1764,10 +1993,11 @@
       }
       return;
     }
-    hkKey.value = acceleratorFromEvent(event);
-    const res = await applyHotkey({ accelerator: hkKey.value });
+    const accelerator = acceleratorFromEvent(event);
+    hkKey.value = prettyAccel(accelerator);
+    const res = await applyHotkey({ accelerator });
     if (res) {
-      toast('唤出快捷键已改为 ' + state.hotkey.accelerator);
+      toast('唤出快捷键已改为 ' + prettyAccel(state.hotkey.accelerator));
       // 录完就主动退出录制态：提示语要停在「已生效：Ctrl+Alt+F10」上
       finishRecording();
     }
@@ -1779,7 +2009,7 @@
     if (!res) return;
     if (on && !res.registered) return toast(res.error || '快捷键注册失败，请换一个组合键', true);
     toast(on
-      ? '已启用：按 ' + state.hotkey.accelerator + ' 唤出 / 收起窗口'
+      ? '已启用：按 ' + prettyAccel(state.hotkey.accelerator) + ' 唤出 / 收起窗口'
       : '已关闭全局快捷键');
   });
 
@@ -1792,18 +2022,27 @@
     const res = await applyHotkey({ accelerator: fallback });
     if (!res) return;
     toast(res.registered
-      ? '已恢复默认快捷键 ' + state.hotkey.accelerator
-      : '已恢复默认，但 ' + state.hotkey.accelerator + ' 被其它程序占用，请换一个');
+      ? '已恢复默认快捷键 ' + prettyAccel(state.hotkey.accelerator)
+      : '已恢复默认，但 ' + prettyAccel(state.hotkey.accelerator) + ' 被其它程序占用，请换一个');
   });
 
   // ---------------- 账号迁移 ----------------
   let pendingImport = null; // { file, summary }
 
-  function migrateNote(text, kind) {
+  function migrateNote(text, kind, title) {
     const el = $('migrate-note');
     el.textContent = text;
+    // 完整路径太长，正文里只放文件名，路径挂在 title 上（鼠标停一下就能看全）
+    if (title) el.title = title; else el.removeAttribute('title');
     el.classList.toggle('warn', kind === 'warn');
     el.classList.toggle('ok', kind === 'ok');
+  }
+
+  /** 12345 -> "12.1 KB"（导出结果里只需要一个量级，不必精确到字节） */
+  function prettyBytes(n) {
+    const bytes = Number(n) || 0;
+    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    return Math.max(1, Math.round(bytes / 1024)) + ' KB';
   }
 
   function migrateButtons(busy) {
@@ -1889,11 +2128,16 @@
       if (res && res.canceled) return;
       return toast((res && res.error) || '导出失败', true);
     }
+    // 详情（数量、加密与否）都在这一行里，路径挂 title；
+    // 未加密时才提醒保管——加密过的文件没必要每次都吓唬一遍
+    const name = String(res.file).split(/[\\/]/).pop();
     migrateNote(
-      `已导出 ${res.services} 个服务（${res.cookies} 条 Cookie、${res.storages} 项本地存储）到 `
-      + `${res.file}${res.encrypted ? '，已加密' : '，未加密'}。`
-      + '请妥善保管这个文件，它等于你各账号的登录凭证。',
+      `已导出 ${name} · ${res.services} 个服务 · ${res.cookies} 条 Cookie · `
+      + `${res.storages} 项本地存储 · ${prettyBytes(res.bytes)}`
+      + (res.skipped ? ` · 已跳过 ${res.skipped} 项过期/统计数据` : '')
+      + (res.encrypted ? ' · 已加密' : ' · 未加密，等同账号凭证，注意保管'),
       res.encrypted ? 'ok' : 'warn',
+      res.file,
     );
     toast('已导出登录信息');
   });
