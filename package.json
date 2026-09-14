@@ -63,6 +63,8 @@
       "build/icon.png",
       "build/tray.png",
       "build/tray@2x.png",
+      "build/tray-mac.png",
+      "build/tray-mac@2x.png",
       "package.json"
     ],
     "asar": true,
@@ -102,14 +104,19 @@
     },
     "dmg": {
       "title": "${productName} ${version}",
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "iconSize": 128,
       "contents": [
         {
           "x": 140,
-          "y": 200
+          "y": 190
         },
         {
           "x": 400,
-          "y": 200,
+          "y": 190,
           "type": "link",
           "path": "/Applications"
         }

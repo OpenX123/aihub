@@ -70,8 +70,9 @@ if (menuIcons.length < 100) problems.push(`icons/menu 只有 ${menuIcons.length}
 if (!files.some((f) => f.path === 'build/icon.png')) {
   problems.push('缺少 build/icon.png（窗口图标 / 托盘兜底图会缺失）');
 }
-// 小尺寸专用托盘图：不带 @2x 的话 macOS 菜单栏 / Windows 高分屏下会糊
-for (const need of ['build/tray.png', 'build/tray@2x.png']) {
+// 小尺寸专用托盘图：不带 @2x 的话 macOS 菜单栏 / Windows 高分屏下会糊。
+// tray-mac 是单独的一档：菜单栏按 22pt 排版，拿 32px 的 tray.png 去顶会明显偏大。
+for (const need of ['build/tray.png', 'build/tray@2x.png', 'build/tray-mac.png', 'build/tray-mac@2x.png']) {
   if (!files.some((f) => f.path === need)) {
     problems.push(`缺少 ${need}（托盘 / 菜单栏图标会退回大图硬缩，发灰）`);
   }

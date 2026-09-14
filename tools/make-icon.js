@@ -11,13 +11,20 @@
  * 产物：
  *   build/icon.ico              多分辨率图标（16/32/48/64/128/256，BMP 条目，兼容性最好）
  *   build/icon.png              1024x1024 图形（打包用：Windows 图标 + macOS 的 icns 来源）
- *   build/tray.png              32x32 托盘/菜单栏图标
- *   build/tray@2x.png           64x64 高分屏版本（macOS 会自己找同名 @2x 文件）
+ *   build/tray.png              32x32 Windows 托盘图标
+ *   build/tray@2x.png           64x64 高分屏版本
+ *   build/tray-mac.png          22x22 macOS 菜单栏图标（菜单栏就是 22pt 高）
+ *   build/tray-mac@2x.png       44x44 Retina 版本（Electron 会自己找同名 @2x 文件）
  *   assets/brand/logo.png       裁掉多余留白的完整锁版（README 用）
  *   assets/brand/logo-mark.png  512x512 图形（正方形，居中留边）
  *
- * 关键点：源图是「图形在上、字标在下」的锁版，直接缩成方图当图标，字会糊成一团。
+ * 关键点一：源图是「图形在上、字标在下」的锁版，直接缩成方图当图标，字会糊成一团。
  * 所以这里先用 alpha 通道把图形那一段切出来（顶部连续非空行），再裁成正方形加留白。
+ *
+ * 关键点二：方形裁剪框允许超出源图边界，超出的部分补透明。早先这里把 sx/sy 夹在
+ * [0, W-side] 里，而图形长边 * 留边系数 已经大于源图宽度，于是裁剪框被夹成「整幅源图」，
+ * 留边系数完全没生效，图形在源图里本来的偏移也直接透到成品上（左右留白 91 / 56，
+ * 肉眼可见地右偏）。现在按图形中心居中裁，不夹边界。
  */
 
 const fs = require('fs');
@@ -40,8 +47,16 @@ const ICO_SIZES = [16, 32, 48, 64, 128, 256];
 const ICON_PNG = 1024;   // build/icon.png
 const LOCKUP_MAX = 1024; // assets/brand/logo.png 的长边上限
 const MARK_PNG = 512;    // assets/brand/logo-mark.png
-const TRAY_PNG = 32;     // build/tray.png（Windows 托盘 / macOS 菜单栏）
-const MARGIN = 1.22;     // 图形外面留多少边（1.16 = 图形占画布约 86%）
+const TRAY_PNG = 32;     // build/tray.png（Windows 托盘，16px 下也要看得清）
+const TRAY_MAC = 22;     // build/tray-mac.png（macOS 菜单栏，22pt；@2x 就是 44）
+// 留边系数 = 画布边长 / 图形长边。1024/824 对应 Apple HIG 的图标网格：
+// 不带圆角方底的「自由形」图标，长边就是占 824/1024 ≈ 80.5%。
+const MARGIN = 1024 / 824;
+// Windows 托盘只有 16px，图形要尽量占满，不然缩完就是一小团看不清的东西
+const TRAY_MARGIN = 1.02;
+// macOS 菜单栏 22pt 高，系统自带图标的内容普遍是 16~18pt，所以这里留一点呼吸；
+// 1.1 → 图形长边 20px、短边约 16.4px，和旁边的电池 / Wi-Fi 一个视觉重量
+const TRAY_MAC_MARGIN = 1.1;
 const INK_ALPHA = 60;    // 高于这个 alpha 才算「真的有内容」（低于它多半是去背残留）
 const MIN_ROW_RATIO = 0.004; // 一行/一列里至少要有这么多比例的像素有内容才算数
 // 去背参数。设计稿的背景是「带噪点的浅灰」（不是纯色，也不是真透明），
@@ -134,17 +149,42 @@ function toBase64(bytes) {
   return btoa(binary);
 }
 
-/** 在离屏 canvas 上按源矩形绘到目标尺寸，返回原始 RGBA */
-function renderPixels(img, sx, sy, sw, sh, size) {
+/**
+ * 按方框裁出一张正方形画布。方框允许超出源图边界——超出的部分就是透明的。
+ * 用 drawImage(src, -sx, -sy) 而不是「源矩形」那个重载：后者要求源矩形落在图内，
+ * 一旦想留的边比源图还宽，就只能把方框夹回图内，留边系数也就白设了。
+ */
+function cropSquare(src, sx, sy, side) {
+  const c = document.createElement('canvas');
+  c.width = side; c.height = side;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(src, -sx, -sy);
+  return c;
+}
+
+/** 把裁好的方图缩到目标尺寸，返回原始 RGBA */
+function squarePixels(square, size) {
   const c = document.createElement('canvas');
   c.width = size; c.height = size;
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
+  ctx.drawImage(square, 0, 0, size, size);
   return ctx.getImageData(0, 0, size, size).data;
 }
 
+/** 把裁好的方图缩到目标尺寸，返回 PNG data URL */
+function squarePng(square, size) {
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(square, 0, 0, size, size);
+  return c.toDataURL('image/png');
+}
+
+/** 非正方形的那张（README 锁版）：按源矩形绘到目标尺寸 */
 function renderPng(img, sx, sy, sw, sh, w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
@@ -248,21 +288,12 @@ window.__run = async () => {
   }
   if (right < 0) throw new Error('图形部分没有找到不透明像素');
 
-  // 4) 裁成正方形：以图形的中心为中心，边长 = 长边 * 留边系数
+  // 4) 只留「图形」这一块：正方形裁剪框在竖直方向必然会伸到字标里去
+  //    （图标底部会露出 "Aihub" 的顶端），所以先把图形上下之外的内容清掉。
   const markW = right - left + 1;
   const markH = markBottom - markTop + 1;
-  const side = Math.min(Math.max(markW, markH) * __MARGIN__, Math.min(W, H));
   const cx = left + markW / 2;
   const cy = markTop + markH / 2;
-  let sx = Math.round(cx - side / 2);
-  let sy = Math.round(cy - side / 2);
-  sx = Math.max(0, Math.min(W - side, sx));
-  sy = Math.max(0, Math.min(H - side, sy));
-  const sSide = Math.round(side);
-
-  // 4) 只要「图形」这一块：方形裁剪的边长按图形的长边算，
-  //    竖直方向必然会伸到字标里去（图标底部会露出 "Aihub" 的顶端），所以这里把
-  //    图形上下之外的内容直接清掉，再拿去缩各种尺寸。
   const markCanvas = document.createElement('canvas');
   markCanvas.width = W; markCanvas.height = H;
   const mctx = markCanvas.getContext('2d', { willReadFrequently: true });
@@ -270,34 +301,45 @@ window.__run = async () => {
   if (markTop > 0) mctx.clearRect(0, 0, W, markTop);
   if (markBottom + 1 < H) mctx.clearRect(0, markBottom + 1, W, H - markBottom - 1);
 
-  // 5) 每一档图标都要原始像素（Node 侧编码成 ICO）。都从「只有图形」的画布上取。
+  // 5) 以图形中心为中心裁正方形，边长 = 图形长边 * 留边系数。
+  //    方框可以比源图还大、可以越界，越出去的部分补透明（见文件头「关键点二」）。
+  const squareAround = (margin) => {
+    const side = Math.round(Math.max(markW, markH) * margin);
+    const x = Math.round(cx - side / 2);
+    const y = Math.round(cy - side / 2);
+    return { side, x, y, canvas: cropSquare(markCanvas, x, y, side) };
+  };
+  const iconSquare = squareAround(__MARGIN__);
+  const traySquare = squareAround(__TRAY_MARGIN__);
+  const trayMacSquare = squareAround(__TRAY_MAC_MARGIN__);
+
+  // 6) 每一档图标都要原始像素（Node 侧编码成 ICO）
   const sizes = {};
   for (const size of __ICO_SIZES__) {
-    sizes[size] = toBase64(renderPixels(markCanvas, sx, sy, sSide, sSide, size));
+    sizes[size] = toBase64(squarePixels(iconSquare.canvas, size));
   }
 
-  // 6) README / 文档用的两张图（锁版要带字标，所以用 clean）
+  // 7) README / 文档用的两张图（锁版要带字标，所以用 clean）
   const lockupW = Math.min(W, __LOCKUP_MAX__);
   const lockup = renderPng(clean, 0, markTop, W, H - markTop, lockupW,
     Math.round((H - markTop) * lockupW / W));
-  const markPng = renderPng(markCanvas, sx, sy, sSide, sSide, __MARK_PNG__, __MARK_PNG__);
-  const iconPng = renderPng(markCanvas, sx, sy, sSide, sSide, __ICON_PNG__, __ICON_PNG__);
-  // 托盘：小尺寸直接从小画布重采样，别拿 1024 硬缩，边缘会发灰。
-  // 而且托盘 / 菜单栏要的是「图形尽量占满」，所以这里用贴合图形的裁剪（留边 1.02），
-  // 不用图标那套 1.22 的留白——否则在 16px 的菜单栏里会显得又小又空。
-  const traySide = Math.round(Math.max(markW, markH) * 1.02);
-  let tsx = Math.round(cx - traySide / 2);
-  let tsy = Math.round(cy - traySide / 2);
-  tsx = Math.max(0, Math.min(W - traySide, tsx));
-  tsy = Math.max(0, Math.min(H - traySide, tsy));
-  const trayPng = renderPng(markCanvas, tsx, tsy, traySide, traySide, __TRAY_PNG__, __TRAY_PNG__);
-  const tray2xPng = renderPng(markCanvas, tsx, tsy, traySide, traySide, __TRAY_PNG__ * 2, __TRAY_PNG__ * 2);
+  const markPng = squarePng(iconSquare.canvas, __MARK_PNG__);
+  const iconPng = squarePng(iconSquare.canvas, __ICON_PNG__);
+
+  // 8) 托盘 / 菜单栏：从原分辨率的裁剪重采样，别拿 1024 那张硬缩，边缘会发灰。
+  //    留边也比应用图标小得多——16~22px 的栏里图形要尽量占满，不然就是一小团看不清的东西。
+  const trayPng = squarePng(traySquare.canvas, __TRAY_PNG__);
+  const tray2xPng = squarePng(traySquare.canvas, __TRAY_PNG__ * 2);
+  const trayMacPng = squarePng(trayMacSquare.canvas, __TRAY_MAC__);
+  const trayMac2xPng = squarePng(trayMacSquare.canvas, __TRAY_MAC__ * 2);
 
   return {
     source: { width: W, height: H },
     keyed,
     mark: { top: markTop, bottom: markBottom, left, right, width: markW, height: markH },
-    crop: { x: sx, y: sy, side: sSide },
+    crop: { x: iconSquare.x, y: iconSquare.y, side: iconSquare.side },
+    trayCrop: { side: traySquare.side },
+    trayMacCrop: { side: trayMacSquare.side },
     usedFallback,
     sizes,
     lockup,
@@ -305,6 +347,8 @@ window.__run = async () => {
     iconPng,
     trayPng,
     tray2xPng,
+    trayMacPng,
+    trayMac2xPng,
   };
 };
 </script></body></html>`;
@@ -327,7 +371,10 @@ function html() {
     .replaceAll('__LOCKUP_MAX__', String(LOCKUP_MAX))
     .replaceAll('__MARK_PNG__', String(MARK_PNG))
     .replaceAll('__ICON_PNG__', String(ICON_PNG))
-    .replaceAll('__TRAY_PNG__', String(TRAY_PNG));
+    .replaceAll('__TRAY_PNG__', String(TRAY_PNG))
+    .replaceAll('__TRAY_MAC__', String(TRAY_MAC))
+    .replaceAll('__TRAY_MAC_MARGIN__', String(TRAY_MAC_MARGIN))
+    .replaceAll('__TRAY_MARGIN__', String(TRAY_MARGIN));
 }
 
 // ---------------------------------------------------------------------------
@@ -382,6 +429,8 @@ async function main() {
   results.push(writeIfChanged(path.join(BUILD_DIR, 'icon.png'), dataUrlToBuffer(result.iconPng)));
   results.push(writeIfChanged(path.join(BUILD_DIR, 'tray.png'), dataUrlToBuffer(result.trayPng)));
   results.push(writeIfChanged(path.join(BUILD_DIR, 'tray@2x.png'), dataUrlToBuffer(result.tray2xPng)));
+  results.push(writeIfChanged(path.join(BUILD_DIR, 'tray-mac.png'), dataUrlToBuffer(result.trayMacPng)));
+  results.push(writeIfChanged(path.join(BUILD_DIR, 'tray-mac@2x.png'), dataUrlToBuffer(result.trayMac2xPng)));
   results.push(writeIfChanged(path.join(BRAND_DIR, 'logo.png'), dataUrlToBuffer(result.lockup)));
   results.push(writeIfChanged(path.join(BRAND_DIR, 'logo-mark.png'), dataUrlToBuffer(result.markPng)));
 
@@ -392,7 +441,9 @@ async function main() {
   if (result.usedFallback) {
     console.log('  提示：图形和字标之间没有找到空行，按上 62% 估算的图形范围');
   }
-  console.log(`裁成正方形 ${result.crop.side}x${result.crop.side}（留边 ${MARGIN} 倍）`);
+  console.log(`裁成正方形 ${result.crop.side}x${result.crop.side}` +
+    `（应用图标留边 ${MARGIN.toFixed(3)} 倍，图形占画布 ${(100 / MARGIN).toFixed(1)}%）`);
+  console.log(`托盘裁剪 ${result.trayCrop.side}（Windows）/ ${result.trayMacCrop.side}（macOS 菜单栏）`);
   for (const item of results) {
     const rel = path.relative(ROOT, item.file).replace(/\\/g, '/');
     console.log(`  ${CHECK_ONLY && item.changed ? '✗ 需要重新生成 ' : '✓ '}${rel}  ${(item.bytes / 1024).toFixed(1)} KB`);
