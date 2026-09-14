@@ -1,7 +1,7 @@
 {
   "name": "aihub",
   "productName": "Aihub",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "把常用的 AI 聊天网站聚合到一个窗口里：多标签 + 拖拽分屏，每个站点独立 session，登录态互不干扰。Windows 桌面客户端（Electron）",
   "main": "main.js",
@@ -39,9 +39,15 @@
     "dist": "npm run icons && npm run menu-icons && electron-builder --win",
     "dist:win": "npm run icons && npm run menu-icons && electron-builder --win --x64 --publish never",
     "dist:mac": "npm run icons && npm run menu-icons && electron-builder --mac --arm64 --publish never",
-    "dist:dir": "npm run icons && npm run menu-icons && electron-builder --win --dir"
+    "dist:dir": "npm run icons && npm run menu-icons && electron-builder --win --dir",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:test": "cd src-tauri && cargo test",
+    "lint:ui": "node --check src-ui/api-shim.js && node tools/check-ui-syntax.js"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "electron": "^44.3.0",
     "electron-builder": "^26.15.3"
   },

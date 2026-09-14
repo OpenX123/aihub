@@ -1,0 +1,154 @@
+name: Build (Tauri)
+
+# Tauri 版打包：Windows x64（NSIS）+ macOS arm64（dmg）。
+# 推 main / 提 PR 时只出产物；推 v* 标签时额外发 Release 并生成 latest.json
+# （tauri-plugin-updater 的更新源，对应 Electron 版的 latest.yml）。
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Rust 侧的快速门禁：布局几何 / 配置迁移 / 视图回收都有单测，
+  # 挂了就别浪费十几分钟去打包了。
+  test:
+    name: Rust 测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # Linux 上 tauri 要链 webkit2gtk 才能编译（测试本身不开窗口）
+      - name: 安装 Linux 依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --all-features
+
+  build:
+    name: ${{ matrix.label }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: aihub-windows-x64
+          - label: macOS arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            artifact: aihub-macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      # 前端是纯静态文件（src-ui/），不需要构建步骤——
+      # 但图标素材是产物不是源，按图标表重新生成一遍。
+      - name: 生成图标素材
+        run: npm run icons
+
+      - name: 打包
+        env:
+          # 更新包的签名密钥。没配 secret 时 Tauri 会跳过签名，
+          # 产物照样能装，只是自动更新不可用（updater 会拒绝未签名的包）。
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build --target ${{ matrix.target }}
+
+      - name: 显示产物大小
+        shell: bash
+        run: |
+          find src-tauri/target/${{ matrix.target }}/release/bundle \
+            -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.sig' \) \
+            -exec ls -lh {} \;
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.sig
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.sig
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: 发布 Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
+      - name: 汇总产物并生成 latest.json
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' \
+            -o -name '*.tar.gz' -o -name '*.sig' \) -exec cp {} release/ \;
+          ls -lh release
+          # tauri-plugin-updater 的更新源。它按 platform 键找包，
+          # 每个包都要带上对应 .sig 的内容，否则客户端会拒绝安装。
+          node .github/scripts/make-latest-json.mjs \
+            "${GITHUB_REF_NAME#v}" release "${GITHUB_REPOSITORY}" "${GITHUB_REF_NAME}"
+          cat release/latest.json
+
+      - name: 创建或更新 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" release/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Aihub $tag" \
+              --generate-notes
+          fi
+
+      - name: 追加安装提示
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f .github/release-footer.md ]; then
+            tag="${GITHUB_REF_NAME}"
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body -q .body > /tmp/body.md
+            printf '\n\n' >> /tmp/body.md
+            cat .github/release-footer.md >> /tmp/body.md
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file /tmp/body.md
+          fi

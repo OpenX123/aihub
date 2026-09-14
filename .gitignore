@@ -18,3 +18,12 @@ ai-multi-hub-login*.json
 config.json
 config.json.bad
 hub-layout.json
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# 更新包签名私钥 —— 绝不能进仓库
+src-tauri/*.key
+build-out.log
+aihub-run.log

@@ -4,7 +4,7 @@
 [![Build](https://github.com/OpenX123/aihub/actions/workflows/build.yml/badge.svg)](https://github.com/OpenX123/aihub/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20·%20macOS%20(Apple%20Silicon)-0078d4.svg)](#0-安装)
-[![Electron](https://img.shields.io/badge/Electron-44-47848f.svg)](https://www.electronjs.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-2-24c8db.svg)](https://tauri.app/)
 
 <img src="assets/brand/logo.png" alt="Aihub" width="420" />
 
@@ -26,6 +26,28 @@
 > 所以各家的登录态、Cookie、缓存天生就是隔开的。
 
 > 开源（MIT）。内置的各家 logo 是各自公司的商标，本项目只用于标识服务入口，见 [NOTICE.md](NOTICE.md)。
+
+---
+
+## ⚠️ v0.3.0 起换成了 Tauri：从旧版升级要重新登录一次
+
+安装包从 **113 MB 降到约 10 MB**，装完占盘从 373 MB 降到 20 MB 左右——
+因为不再把整个 Chromium 打进包里，改用 Windows 自带的 WebView2。
+
+**代价是各站点要重新登录一次。** 旧版的登录态存在 Chromium 的分区格式里，
+新版走 WebView2，两者的 cookie 存储格式不兼容，没有可靠的转换路径。
+
+能继承的：服务列表、分屏布局、主题、快捷键、休眠设置（都在同一个 `config.json` 里）。
+要重做的：每个站点登录一次。
+
+另外两点：
+
+- **macOS 最低要求抬到 14.0**：每站独立登录态在 mac 上依赖 `data_store_identifier`，
+  这个 API 只有 macOS 14+ 才有。13 及以下装上会出现登录态互串，所以直接挡住。
+- **Windows 需要 WebView2 运行时**：Win11 自带，Win10 基本都随 Edge 装过了。
+  极少数精简版 / LTSC 系统上，安装器会自动去微软下载（需要联网，约 1 分钟）。
+
+细节见 [ADR-001](docs/adr/001-electron-to-tauri.md)。
 
 ---
 

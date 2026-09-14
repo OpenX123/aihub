@@ -1,0 +1,24 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Aihub 外壳（标签栏 / 设置面板）需要的权限。站点 webview 不挂任何 capability。",
+  "webviews": [
+    "shell"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:webview:default",
+    "opener:allow-open-url",
+    "global-shortcut:default",
+    "dialog:default",
+    "clipboard-manager:allow-write-text",
+    "updater:default",
+    "process:allow-restart",
+    "process:allow-exit"
+  ]
+}

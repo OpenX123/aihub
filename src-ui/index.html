@@ -1,0 +1,2338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' https: data: asset: http://asset.localhost; connect-src ipc: http://ipc.localhost;" />
+<title>Aihub</title>
+<style>
+  /* 配色全部走变量：深色是默认值，浅色主题在下面的 prefers-color-scheme 里覆盖。
+     主题由主进程的 nativeTheme.themeSource 控制（设置里的 深色 / 浅色 / 跟随系统），
+     所以这里用媒体查询就够了，不需要额外的主题类名。 */
+  :root {
+    --bar: 44px;
+
+    --bg: #12141a;
+    --bar-bg: #1b1e26;
+    --bar-border: #272b36;
+    --fg: #e6e9ef;
+    --fg-strong: #ffffff;
+    --fg-dim: #98a0b0;
+    --hover: #262a35;
+    --active: #323746;
+    --stripe: rgba(255,255,255,.05);
+    --badge-bg: rgba(255,255,255,.12);
+    --badge-fg: #dfe4ee;
+
+    --panel-bg: #171a22;
+    --card-bg: #13161d;
+    --line: #242938;
+    --input-bg: #101319;
+    --input-border: #2c3242;
+    --chip-bg: #232938;
+    --chip-hover: #2b323f;
+    --code-bg: #1c2029;
+    --code-fg: #b9c3d6;
+    --scrim: rgba(8, 10, 14, .9);
+    --shadow: rgba(0,0,0,.45);
+    --shadow-strong: rgba(0,0,0,.5);
+
+    --divider: #2b3040;
+    --divider-hover: #4b5468;
+
+    --danger: #e0526b;
+    --danger-bg: #2a1c21;
+    --danger-hover: #37222a;
+    --danger-border: #4a2b33;
+    --danger-fg: #ffb3bf;
+    --ok: #3ecf8e;
+    --ok-fg: #8bd99f;
+    --warn-fg: #ffd08a;
+    --accent: #4d6bfe;
+    --accent-hover: #5c78ff;
+    --on-accent: #ffffff;
+
+    /* 动效令牌（曲线来自 easing 规范表，不自己编）：
+       - 只动 transform / opacity：跳过布局与重绘，走 GPU 合成。
+       - 进入和退出都用 --ease-out；退出更短（--dur-exit），手感更跟手。
+       - 屏幕上「位置在变」的东西（滑块）用 --ease-drawer（iOS 抽屉曲线）。 */
+    --dur-1: 120ms;   /* 按压 / 悬浮反馈 */
+    --dur-2: 180ms;   /* 小元素进出：提示、下拉 */
+    --dur-3: 240ms;   /* 面板、弹层 */
+    --dur-exit: 150ms;
+    --ease-out: cubic-bezier(.23, 1, .32, 1);
+    --ease-in-out: cubic-bezier(.77, 0, .175, 1);
+    --ease-drawer: cubic-bezier(.32, .72, 0, 1);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f5f7;
+      --bar-bg: #eaecf0;
+      --bar-border: #d7dae1;
+      --fg: #1f2329;
+      --fg-strong: #0b0d11;
+      --fg-dim: #6b7280;
+      --hover: #dfe2e8;
+      --active: #d3d7de;
+      --stripe: rgba(0,0,0,.04);
+      --badge-bg: rgba(0,0,0,.08);
+      --badge-fg: #3f4652;
+
+      /* 面板、卡片、输入框一律纯白：半透明会透出后面的滚动内容，显得脏 */
+      --panel-bg: #ffffff;
+      --card-bg: #ffffff;
+      --line: #e3e6ec;
+      --input-bg: #ffffff;
+      --input-border: #d3d8e0;
+      --chip-bg: #f1f3f7;
+      --chip-hover: #e6e9ef;
+      --code-bg: #f1f3f7;
+      --code-fg: #3f4652;
+      --scrim: rgba(24, 28, 36, .45);
+      --shadow: rgba(24,28,36,.14);
+      --shadow-strong: rgba(24,28,36,.2);
+
+      --divider: #d3d8e0;
+      --divider-hover: #a8b0bd;
+
+      --danger: #d93a52;
+      --danger-bg: #fdeff1;
+      --danger-hover: #fbe1e5;
+      --danger-border: #f2c4cc;
+      --danger-fg: #a81f36;
+      --ok: #12a150;
+      --ok-fg: #0f7a45;
+      --warn-fg: #8a5a00;
+      --accent: #3b5bdb;
+      --accent-hover: #3450c4;
+    }
+  }
+  * { box-sizing: border-box; }
+  /* 标签栏里的加载圈 / 栏号角标是常驻节点，只靠 hidden 切换（不反复建节点 = 不闪不重排） */
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Segoe UI", "Microsoft YaHei", -apple-system, system-ui, sans-serif;
+    font-size: 13px;
+    user-select: none;
+  }
+
+  /* ---------- 顶部标签栏 ---------- */
+  #bar {
+    height: var(--bar);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    background: var(--bar-bg);
+    border-bottom: 1px solid var(--bar-border);
+    -webkit-app-region: drag;
+  }
+  /* 标签栏收起：外壳这边也要把 #bar 撤掉，否则站点视图已经从 y=0 开始铺了，
+     标签栏还在原位占着一条，会被站点页面盖住半截。
+     设置面板（#overlay）不受影响，它本来就是整窗浮层。 */
+  body.no-tabbar #bar { display: none; }
+
+  #tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-app-region: no-drag;
+  }
+  #tabs::-webkit-scrollbar { display: none; }
+
+  .tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 0 auto;
+    height: 30px;
+    max-width: 210px;
+    padding: 0 12px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--fg-dim);
+    font: inherit;
+    cursor: pointer;
+    /* 标签栏点得频繁，所以只做「近乎察觉不到」的颜色过渡 + 按压反馈，不做位移 */
+    transition: color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
+  }
+  .tab:active { transform: scale(.97); transition: transform var(--dur-1) var(--ease-out); }
+  /* 悬浮：只给一点点底色，表示可点 */
+  @media (hover: hover) and (pointer: fine) {
+    .tab:hover { background: var(--hover); color: var(--fg); }
+  }
+  /* 选中：不加底色、不加侧边色条，只把文字提亮加粗，靠对比区分 */
+  .tab.active {
+    background: transparent;
+    color: var(--fg-strong);
+    font-weight: 600;
+  }
+  .tab.active .name { letter-spacing: .1px; }
+  /* 关闭按钮：平时不占视觉，鼠标进标签才出现。
+     用 width 从 0 撑开会让整条标签栏抖，所以位置固定、只切换 opacity。 */
+  .tab .close {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 16px; height: 16px;
+    margin-right: -4px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-2) var(--ease-out), background-color var(--dur-1) var(--ease-out);
+  }
+  .tab .close svg { width: 9px; height: 9px; }
+  @media (hover: hover) and (pointer: fine) {
+    .tab:hover .close { opacity: .75; pointer-events: auto; }
+    .tab .close:hover { opacity: 1; background: var(--badge-bg); }
+  }
+  /* 触屏 / 没有 hover 的设备上一直显示，否则根本收不起来 */
+  @media not all and (hover: hover) {
+    .tab .close { opacity: .75; pointer-events: auto; }
+  }
+  /* 拖动中的标签：半透明跟手，落点用一条竖线提示 */
+  .tab.dragging { opacity: .4; }
+  .tab.drop-before::before,
+  .tab.drop-after::after {
+    content: '';
+    position: absolute;
+    top: 4px; bottom: 4px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--accent);
+  }
+  .tab.drop-before::before { left: -3px; }
+  .tab.drop-after::after { right: -3px; }
+  /* 已经在分屏布局里的标签：同样不加色条，只把底色压深一点点 + 数字角标 */
+  .tab.pane { color: var(--fg); background: var(--stripe); }
+  .tab.pane.active { background: transparent; color: var(--fg-strong); }
+  .tab .pane-no {
+    flex: 0 0 auto;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
+    border-radius: 8px;
+    background: var(--badge-bg);
+    color: var(--badge-fg);
+    font-size: 10px;
+    line-height: 15px;
+    text-align: center;
+    /* 刚加入分屏时角标弹一下（缩放+淡入，不动布局） */
+    animation: badgeIn var(--dur-3) var(--ease-out);
+  }
+  @keyframes badgeIn {
+    from { opacity: 0; transform: scale(.6); }
+    to { opacity: 1; transform: none; }
+  }
+  .tab .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: var(--dot, var(--accent));
+  }
+  .tab img.fav {
+    width: 16px; height: 16px;
+    border-radius: 3px;
+    flex: 0 0 auto;
+    object-fit: contain;
+  }
+  /* 内置 logo 不再垫白底（垫了会有个白方块，很难看）。
+     「纯黑 / currentColor」的 logo 在深色主题下加载 icons/dark 那套变体，
+     「纯白 / 浅灰」的在浅色主题下加载 icons/light 那套，见 tools/build-icons.js。 */
+  .tab .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tab .spin {
+    width: 12px; height: 12px;
+    flex: 0 0 auto;
+    border: 2px solid var(--badge-bg);
+    border-top-color: var(--dot, var(--accent));
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tab[data-error="1"] .dot { background: var(--danger) !important; }
+  /* 已休眠：整个标签淡一点就够了，名字和 logo 都照常显示（只动 opacity，不触发重排） */
+  .tab[data-hibernated="1"] { opacity: .62; }
+
+  .spacer { flex: 1 1 auto; min-width: 12px; height: 100%; }
+
+  #host {
+    flex: 0 1 auto;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-dim);
+    font-size: 12px;
+    padding-right: 4px;
+    -webkit-app-region: no-drag;
+  }
+
+  #tools { display: flex; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
+  .icon-btn {
+    display: grid;
+    place-items: center;
+    width: 30px; height: 30px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--fg-dim);
+    cursor: pointer;
+    transition: background-color var(--dur-2) var(--ease-out), color var(--dur-2) var(--ease-out);
+  }
+  .icon-btn:active { transform: scale(.94); transition: transform var(--dur-1) var(--ease-out); }
+  @media (hover: hover) and (pointer: fine) {
+    .icon-btn:hover { background: var(--hover); color: var(--fg); }
+  }
+  .icon-btn.on { background: var(--active); color: var(--fg-strong); }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .icon-btn { position: relative; }
+  .icon-btn .badge {
+    position: absolute;
+    top: -1px; right: -1px;
+    min-width: 13px;
+    height: 13px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 9px;
+    line-height: 13px;
+    text-align: center;
+  }
+
+  /* ---------- 分屏：分隔条层 ---------- */
+  /* 这一层整体不吃鼠标事件，只有分隔条本身可点；分隔条正好落在视图之间的缝隙里，
+     所以不会被 WebContentsView 挡住。 */
+  #split-layer {
+    position: fixed;
+    left: 0; right: 0;
+    top: var(--bar);
+    bottom: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  #split-layer[hidden] { display: none; }
+  .divider {
+    position: absolute;
+    top: 0; bottom: 0;
+    pointer-events: auto;
+    cursor: col-resize;
+    touch-action: none;
+    background: transparent;
+  }
+  .divider::after {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 50%;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 1px;
+    background: var(--divider);
+    /* 变粗用 scaleX（合成层），不做 width 动画 */
+    transition: background-color var(--dur-2) var(--ease-out), transform var(--dur-1) var(--ease-out);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .divider:hover::after { background: var(--divider-hover); transform: scaleX(1.5); }
+  }
+  .divider.dragging::after { background: var(--accent); transform: scaleX(2); }
+  body.resizing, body.resizing * { cursor: col-resize !important; }
+
+  /* ---------- 视图背后的占位层 ---------- */
+  #stage {
+    position: fixed;
+    top: var(--bar); left: 0; right: 0; bottom: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 10px;
+    color: var(--fg-dim);
+    text-align: center;
+    padding: 24px;
+  }
+  #stage h1 { margin: 0; font-size: 20px; font-weight: 600; color: var(--fg); letter-spacing: .3px; }
+  /* 品牌图形：图形本身是透明底的蓝色标记，深浅色主题下都不用换图 */
+  .brand-mark { display: block; user-select: none; -webkit-user-drag: none; }
+  #stage .brand-mark { margin-bottom: 2px; }
+  .panel header .brand-mark.sm { flex: 0 0 auto; }
+  #stage p { margin: 0; font-size: 13px; max-width: 560px; line-height: 1.7; }
+  #stage code {
+    font-family: Consolas, "Courier New", monospace;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--code-fg);
+  }
+
+  /* ---------- 设置面板 ---------- */
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--scrim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 20;
+    /* 进场：遮罩淡入 + 面板从下方轻微弹入（苹果那种「从触发处长出来」的感觉） */
+    opacity: 0;
+    transition: opacity var(--dur-2) var(--ease-out);
+  }
+  #overlay[hidden] { display: none; }
+  #overlay.open { opacity: 1; }
+  #overlay.closing {
+    opacity: 0;
+    transition: opacity var(--dur-exit) var(--ease-out);
+  }
+  .panel {
+    width: 100%;
+    max-width: 780px;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 24px 60px var(--shadow-strong);
+    overflow: hidden;
+    transform: translateY(14px) scale(.985);
+    opacity: 0;
+    will-change: transform, opacity;
+    transition:
+      transform var(--dur-3) var(--ease-drawer),
+      opacity var(--dur-2) var(--ease-out);
+  }
+  #overlay.open .panel { transform: none; opacity: 1; }
+  #overlay.closing .panel {
+    transform: translateY(8px) scale(.99);
+    opacity: 0;
+    transition-duration: var(--dur-exit);
+    transition-timing-function: var(--ease-out);
+  }
+  .panel header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel header h2 { margin: 0; font-size: 15px; font-weight: 600; margin-right: auto; }
+  .panel .body { padding: 16px 20px 20px; overflow: auto; }
+  .panel footer {
+    padding: 12px 20px;
+    border-top: 1px solid var(--line);
+    color: var(--fg-dim);
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
+  .add-form {
+    display: grid;
+    grid-template-columns: 1fr 1.6fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 12px;
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+  label.field { display: block; }
+  .hint { color: var(--fg-dim); font-size: 12px; margin: 0 0 10px; }
+
+  input[type="text"], input[type="url"] {
+    width: 100%;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--input-bg);
+    color: var(--fg);
+    font: inherit;
+    user-select: text;
+    transition: border-color var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+  }
+  input[type="text"]:focus, input[type="url"]:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  button.btn {
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--chip-bg);
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background-color var(--dur-2) var(--ease-out),
+      border-color var(--dur-2) var(--ease-out),
+      color var(--dur-2) var(--ease-out),
+      transform var(--dur-1) var(--ease-out);
+  }
+  button.btn:hover { background: var(--chip-hover); }
+  /* 按下去给一点回弹，手感更「实」 */
+  button.btn:active { transform: scale(.965); }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  button.btn.primary:hover { background: var(--accent-hover); }
+  button.btn.danger { color: var(--danger-fg); border-color: var(--danger-border); background: var(--danger-bg); }
+  button.btn.danger:hover { background: var(--danger-hover); }
+  button.btn.ghost { background: transparent; }
+  button.btn:disabled { opacity: .45; cursor: default; transform: none; }
+
+  .svc-list { display: flex; flex-direction: column; gap: 8px; }
+  /* 从顶栏收起来的服务：整行压暗，一眼能和还在顶栏上的分开 */
+  .svc-row.hidden-svc { opacity: .62; }
+  .svc-row.hidden-svc:hover { opacity: 1; }
+  .pill.off { color: var(--fg-dim); }
+
+  /* ---- 账号迁移 ---- */
+  .migrate {
+    margin-top: 18px;
+    padding: 12px;
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .migrate-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .migrate-head strong { font-size: 13px; }
+  .migrate-head span { color: var(--fg-dim); font-size: 12px; }
+  .migrate-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
+  .migrate-row input[type="password"] {
+    width: 100%;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--input-bg);
+    color: var(--fg);
+    font: inherit;
+  }
+  .migrate-row input[type="password"]:focus { outline: none; border-color: var(--accent); }
+  .migrate-note { margin-top: 10px; color: var(--fg-dim); font-size: 12px; line-height: 1.7; }
+  .migrate-note.warn { color: var(--warn-fg); }
+  .migrate-note.ok { color: var(--ok-fg); }
+  #migrate-confirm { margin-top: 10px; }
+  .svc-row {
+    display: grid;
+    /* logo + 名称 + 网址 + 操作。没有颜色列：颜色在这里没有意义，
+       只在「这个服务没有内置 logo」时才用到自动分配的颜色画个小圆点。 */
+    grid-template-columns: 26px minmax(90px, 0.9fr) minmax(160px, 1.4fr) auto;
+    gap: 8px;
+    align-items: center;
+    padding: 10px;
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    transition: border-color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
+  }
+  .svc-row:hover { border-color: var(--divider-hover); }
+  /* 面板打开时列表逐条淡入（错开 26ms，苹果那种「依次落位」的感觉） */
+  .svc-list.enter > .svc-row {
+    animation: rowIn var(--dur-3) var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 26ms);
+  }
+  @keyframes rowIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  .svc-badge {
+    display: flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px;
+    border-radius: 6px;
+  }
+  .svc-badge img { width: 18px; height: 18px; object-fit: contain; }
+  .svc-badge .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--dot, var(--accent)); }
+  .pref { margin-top: 12px; padding: 10px 12px; background: var(--card-bg); border: 1px solid var(--line); border-radius: 10px; }
+  .pref-row { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  .pref-row.block { flex-direction: column; gap: 8px; cursor: default; }
+  .pref-row input { margin-top: 2px; width: 16px; height: 16px; accent-color: var(--accent); flex: 0 0 auto; }
+  .pref-row span { display: flex; flex-direction: column; gap: 3px; }
+  .pref-row strong { font-size: 13px; font-weight: 600; }
+  .pref-row em { font-style: normal; color: var(--fg-dim); font-size: 12px; line-height: 1.5; }
+  /* 主题切换：三个等宽小段控，选中块用一个滑块滑过去（只做 transform，不动 width） */
+  .seg {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(72px, 1fr));
+    padding: 2px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+  }
+  .seg-thumb {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    left: 2px;
+    width: calc((100% - 4px) / 3);
+    border-radius: 6px;
+    background: var(--accent);
+    pointer-events: none;
+    transform: translateX(0);
+    transition: transform var(--dur-3) var(--ease-drawer);
+  }
+  /* 四档的分段控件（后台休眠时长）：只改格子数和滑块宽度，其余沿用上面三档那套 */
+  .seg[data-count="4"] { grid-template-columns: repeat(4, minmax(62px, 1fr)); }
+  .seg[data-count="4"] .seg-thumb { width: calc((100% - 4px) / 4); }
+  .seg-thumb.instant { transition: none; }
+  .seg-btn {
+    position: relative;
+    z-index: 1;
+    padding: 5px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fg-dim);
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+    transition: color var(--dur-2) var(--ease-out);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .seg-btn:hover { color: var(--fg); }
+  }
+  .seg-btn[aria-checked="true"] { color: var(--on-accent); }
+
+  /* ---- 全局快捷键（老板键） ----
+     录制框故意用等宽字体 + 居中：一眼能看出这是「按键」而不是普通输入框。
+     .pref-row input 会给里面所有 input 套上 16px 的复选框尺寸，所以这里要盖回来。 */
+  .hk-row { display: flex; gap: 8px; align-items: center; }
+  .hk-toggle { display: flex; gap: 6px; align-items: center; cursor: pointer; white-space: nowrap; }
+  .hk-row input.hk-key {
+    width: 100%;
+    height: 32px;
+    margin-top: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;
+    font-family: Consolas, "Courier New", monospace;
+    letter-spacing: .5px;
+    cursor: pointer;
+  }
+  .hk-row input.hk-key.recording { color: var(--accent); border-color: var(--accent); }
+  .hk-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .hk-presets button {
+    font: inherit; font-size: 12px; cursor: pointer;
+    padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--divider); background: transparent; color: var(--fg-dim);
+  }
+  .hk-presets button:hover { border-color: var(--divider-hover); color: var(--fg); }
+  .hk-presets button.on { border-color: var(--accent); color: var(--accent); }
+  .hk-hint { font-size: 12px; line-height: 1.6; color: var(--fg-dim); }
+  .hk-hint.ok { color: var(--ok-fg); }
+  .hk-hint.warn { color: var(--warn-fg); }
+  .hk-sub {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    cursor: pointer;
+    color: var(--fg-dim);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .hk-sub input {
+    margin-top: 1px;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+    flex: 0 0 auto;
+  }
+  .svc-row .actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+  .svc-row.confirming { border-color: var(--danger-border); background: var(--danger-bg); }
+  .svc-row .confirm-text { grid-column: 1 / -1; color: var(--danger-fg); font-size: 12px; }
+  .pill {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: var(--chip-bg);
+    color: var(--fg-dim);
+    font-size: 11px;
+  }
+
+  /* ---------- 分屏菜单 ----------
+     菜单本身是 Windows 原生菜单（主进程 Menu.popup），浮在所有服务页面之上，
+     所以这里不需要任何样式；页面里画的下拉会被原生视图挡住，也就不用再试了。 */
+
+  /* ---------- Toast ---------- */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%) translateY(14px) scale(.97);
+    max-width: 70vw;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: var(--chip-bg);
+    border: 1px solid var(--line);
+    color: var(--fg);
+    box-shadow: 0 12px 30px var(--shadow);
+    opacity: 0;
+    pointer-events: none;
+    will-change: transform, opacity;
+    /* 隐藏态上的 transition 就是「退出」用的：更短、同一个方向滑回去（进出同路） */
+    transition:
+      opacity var(--dur-exit) var(--ease-out),
+      transform var(--dur-exit) var(--ease-out);
+    z-index: 30;
+  }
+  /* 显示态上的 transition 是「进入」用的：慢一点的、带一点落位感 */
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+    transition:
+      opacity var(--dur-2) var(--ease-out),
+      transform var(--dur-3) var(--ease-drawer);
+  }
+  #toast.err { border-color: var(--danger-border); color: var(--danger-fg); }
+  /* 带按钮的那种（比如「新版本已下载 / 立即重启」）：不会自动消失，要用户处理掉 */
+  #toast {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #toast-action {
+    flex: none;
+    height: 26px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 7px;
+    background: var(--accent);
+    color: #fff;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color var(--dur-2) var(--ease-out);
+  }
+  #toast-action:hover { background: var(--accent-hover); }
+  /* 常驻那条要能点，普通 toast 仍然不吃鼠标事件（免得挡住底下的东西） */
+  #toast.sticky { pointer-events: auto; }
+
+  /* ---------- 动效总则 ----------
+     1. 只动 transform / opacity（GPU 合成，不触发布局）；width/height/top/left/box-shadow 一律不做动画。
+     2. 进入和退出都用 --ease-out（先快后慢），退出更短（--dur-exit）；UI 上永远不用 ease-in。
+     3. 位置在变的元素（段控滑块、分隔条）用 --ease-drawer。
+     4. 尊重系统的「减少动态效果」：保留淡入淡出（帮助理解状态变化），去掉位移和缩放。 */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+      scroll-behavior: auto !important;
+    }
+    .panel, #toast, .tab, button.btn, .svc-list.enter > .svc-row { animation: none !important; }
+    .panel { transform: none !important; transition: opacity var(--dur-2) ease !important; }
+    #overlay, #overlay.closing { transition: opacity var(--dur-2) ease !important; }
+    #toast, #toast.show { transform: translateX(-50%) !important; transition: opacity var(--dur-2) ease !important; }
+    .tab:active, button.btn:active { transform: none !important; }
+    .divider:hover::after, .divider.dragging::after { transform: none !important; }
+  }
+
+  /* 系统要求「减少透明」时：遮罩和面板都变不透明，别透出后面的内容 */
+  @media (prefers-reduced-transparency: reduce) {
+    #overlay { background: #000; }
+    .panel { background: var(--panel-bg); }
+  }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <div id="tabs" role="tablist"></div>
+    <div class="spacer"></div>
+    <div id="host"></div>
+    <div id="tools">
+      <button class="icon-btn" id="btn-reload" title="重新加载当前标签（F5 / Ctrl+R，加 Shift 强制刷新）"></button>
+      <button class="icon-btn" id="btn-home" title="回到该服务首页"></button>
+      <button class="icon-btn" id="btn-split" title="左右分屏显示两个服务"></button>
+      <button class="icon-btn" id="btn-add" title="添加服务（＋）"></button>
+      <button class="icon-btn" id="btn-settings" title="设置（Ctrl+,）"></button>
+    </div>
+  </div>
+
+  <div id="stage">
+    <img class="brand-mark" src="build/icon.png" alt="" width="72" height="72" />
+    <h1>Aihub</h1>
+    <p id="stage-msg">正在准备标签页…</p>
+  </div>
+
+  <div id="split-layer" hidden></div>
+
+  <div id="overlay" hidden>
+    <section class="panel" role="dialog" aria-modal="true" aria-label="设置">
+      <header>
+        <img class="brand-mark sm" src="build/icon.png" alt="" width="28" height="28" />
+        <h2>设置 · 服务管理</h2>
+        <button class="icon-btn" id="btn-close" title="关闭（Esc）"></button>
+      </header>
+      <div class="body">
+        <p class="hint">填名字 + 网址即可新增一个标签，无需改代码或重新打包。每个服务的登录态独立保存在本地。</p>
+        <div class="add-form">
+          <input type="text" id="add-name" placeholder="名称，如 Kimi" maxlength="40" />
+          <input type="url" id="add-url" placeholder="网址，如 https://kimi.moonshot.cn" />
+          <button class="btn primary" id="btn-add-confirm">添加</button>
+        </div>
+        <div class="svc-list" id="svc-list"></div>
+
+        <div class="pref">
+          <div class="pref-row block">
+            <span>
+              <strong>外观主题</strong>
+              <em>深色 / 浅色，或者跟随 Windows 的深浅色设置。只影响本应用自己的标签栏和设置面板。</em>
+            </span>
+            <div class="seg" id="theme-seg" role="radiogroup" aria-label="外观主题">
+              <span class="seg-thumb" id="theme-thumb" aria-hidden="true"></span>
+              <button class="seg-btn" type="button" role="radio" data-theme="dark">深色</button>
+              <button class="seg-btn" type="button" role="radio" data-theme="light">浅色</button>
+              <button class="seg-btn" type="button" role="radio" data-theme="system">跟随系统</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="pref">
+          <div class="pref-row block">
+            <span>
+              <strong>全局快捷键唤出</strong>
+              <em>系统级快捷键：不管当前前台是哪个程序（哪怕在别的程序的全屏窗口里）按下它都能把窗口唤到最前，
+                 优先级高于应用内快捷键；再按一次收起。注册不上会在这里写明原因。</em>
+            </span>
+            <div class="hk-row">
+              <label class="hk-toggle">
+                <input type="checkbox" id="hk-enabled" />
+                <span>启用</span>
+              </label>
+              <input type="text" id="hk-key" class="hk-key" readonly aria-label="唤出快捷键" />
+              <button class="btn ghost" id="hk-reset" type="button">恢复默认</button>
+            </div>
+            <div class="hk-presets" id="hk-presets"></div>
+            <div class="hk-hint" id="hk-hint"></div>
+            <label class="hk-sub">
+              <input type="checkbox" id="hk-pintop" />
+              <span>唤出时强制置顶（最高优先级）：用最高层级压过其它置顶窗口和别的程序的全屏；
+                    窗口让出前台时自动取消，不会一直压着别人</span>
+            </label>
+            <label class="hk-sub">
+              <input type="checkbox" id="hk-tray" />
+              <span>显示托盘图标：窗口收进后台后仍然有一个能点回来的入口</span>
+            </label>
+            <label class="hk-sub">
+              <input type="checkbox" id="hk-close" />
+              <span>点关闭按钮时收进后台而不是退出，这样快捷键随时能唤回（真正退出请用托盘图标的右键菜单）</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="pref">
+          <div class="pref-row block">
+            <span>
+              <strong>后台标签自动休眠</strong>
+              <em>闲置超过设定时间的后台标签会释放掉它的页面进程（相当于省下一个浏览器标签的内存），
+                 点回去自动从原来的位置恢复。分屏里正显示的、正在出声的、正在加载的、
+                 输入框里有没发出去内容的标签都不会被休眠。</em>
+            </span>
+            <div class="seg" id="nap-seg" data-count="4" role="radiogroup" aria-label="后台标签自动休眠">
+              <span class="seg-thumb" id="nap-thumb" aria-hidden="true"></span>
+              <button class="seg-btn" type="button" role="radio" data-minutes="15">15 分钟</button>
+              <button class="seg-btn" type="button" role="radio" data-minutes="30">30 分钟</button>
+              <button class="seg-btn" type="button" role="radio" data-minutes="120">2 小时</button>
+              <button class="seg-btn" type="button" role="radio" data-minutes="off">不休眠</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="pref">
+          <label class="pref-row">
+            <input type="checkbox" id="pref-ontop" />
+            <span>
+              <strong>窗口常驻置顶</strong>
+              <em>让窗口一直压在其它程序上面（系统级置顶，不是应用内的层级），
+                 换到别的程序也不会被盖住。默认开启。这跟上面「唤出时强制置顶」不是一回事：
+                 那个只在按快捷键唤出的那一下生效，失焦就自动取消。</em>
+            </span>
+          </label>
+        </div>
+
+        <div class="pref">
+          <label class="pref-row">
+            <input type="checkbox" id="pref-tabbar" />
+            <span>
+              <strong>显示标签栏</strong>
+              <em>关掉之后顶部这一条会收起来，站点页面铺满整个窗口，能多出 44px 的高度。
+                 收起后用全局快捷键或右键菜单仍然能切换标签。</em>
+            </span>
+          </label>
+        </div>
+
+        <div class="pref">
+          <div class="pref-row block">
+            <span>
+              <strong>版本与更新</strong>
+              <em id="ver-line">当前版本：读取中…</em>
+            </span>
+            <div class="hk-row">
+              <button class="btn ghost" id="btn-check-update" type="button">检查更新</button>
+              <button class="btn primary" id="btn-force-update" type="button" hidden>强制更新并重启</button>
+            </div>
+            <div class="hk-hint" id="update-hint"></div>
+          </div>
+        </div>
+
+        <div class="pref">
+          <label class="pref-row">
+            <input type="checkbox" id="pref-preload" />
+            <span>
+              <strong>启动时预加载所有标签</strong>
+              <em>默认关闭，启动时只加载标签栏当前要显示的那几栏。开启后会把所有标签的页面都真实加载一遍，
+                 标签栏上就能看到各站点自己的标题——logo 不开这个也有。代价是启动即多个渲染进程和多次真实请求。</em>
+            </span>
+          </label>
+        </div>
+
+        <div class="migrate">
+          <div class="migrate-head">
+            <strong>账号迁移</strong>
+            <span>导出各服务的登录状态成一个文件，在另一台设备导入即可继续用，不用重新登录</span>
+          </div>
+          <div class="migrate-row">
+            <input type="password" id="migrate-pass" placeholder="可选：给导出文件设置密码" autocomplete="new-password" />
+            <button class="btn" id="btn-export-login">导出登录信息</button>
+            <button class="btn" id="btn-import-login">导入登录信息</button>
+          </div>
+          <div class="migrate-note" id="migrate-note">
+            文件里是 Cookie 和本地存储（等同账号凭证），只在自己信任的设备之间传递；填了密码就用 AES-256-GCM 加密。
+          </div>
+          <div id="migrate-confirm" hidden></div>
+        </div>
+      </div>
+      <footer id="panel-footer"></footer>
+    </section>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite">
+    <span id="toast-text"></span>
+    <button id="toast-action" type="button" hidden></button>
+  </div>
+
+<script src="api-shim.js"></script>
+<script src="icons.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  if (!window.api) {
+    document.getElementById('stage-msg').textContent =
+      'preload 脚本未加载，无法与主进程通信。请用 npm start 启动，而不是直接用浏览器打开本文件。';
+    return;
+  }
+
+  const ICONS = {
+    reload: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+    home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    split: '<rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="14" y="4" width="7" height="16" rx="1.5"/>',
+    plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+    settings: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+    close: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  };
+
+  function svg(name) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round">' + ICONS[name] + '</svg>';
+  }
+
+  const $ = (id) => document.getElementById(id);
+  const tabsEl = $('tabs');
+  const hostEl = $('host');
+  const stageEl = $('stage');
+  const stageMsg = $('stage-msg');
+  const listEl = $('svc-list');
+  const overlay = $('overlay');
+  const splitLayer = $('split-layer');
+  const toastEl = $('toast');
+  const toastTextEl = $('toast-text');
+  const toastActionEl = $('toast-action');
+
+  let state = { services: [], activeId: null, panes: [], weights: [], maxPanes: 4, preload: true, theme: 'system', hotkey: {}, version: '' };
+  const status = new Map();   // id -> { loading, error, favicon, url, title }
+  const confirming = new Set(); // 待确认删除的服务 id
+  let appVersion = '';
+  let overlayOpen = false;
+
+  // ---------------- 小工具 ----------------
+  let toastTimer = null;
+  function toast(message, isError) {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTextEl.textContent = message;
+    toastActionEl.hidden = true;
+    toastActionEl.onclick = null;
+    toastEl.classList.remove('sticky');
+    toastEl.classList.toggle('err', Boolean(isError));
+    toastEl.classList.add('show');
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
+  }
+
+  /**
+   * 带一个按钮的 toast。
+   * 默认不会自己消失，用在「等用户做个决定」的场合（比如自动更新的「立即重启」）：
+   * 自动消失的提示很容易被错过，而这条错过了就等于更新白下了。
+   * 传 ms 则是「撤销」这类：不做决定也没关系，过一会儿自己收掉。
+   */
+  function toastAction(message, label, onClick, ms) {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = null;
+    toastTextEl.textContent = message;
+    toastActionEl.textContent = label;
+    toastActionEl.hidden = false;
+    toastActionEl.onclick = () => {
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = null;
+      toastEl.classList.remove('show', 'sticky');
+      if (onClick) onClick();
+    };
+    toastEl.classList.remove('err');
+    toastEl.classList.add('show', 'sticky');
+    if (ms > 0) toastTimer = setTimeout(() => toastEl.classList.remove('show', 'sticky'), ms);
+  }
+
+  function statusOf(id) {
+    if (!status.has(id)) status.set(id, { loading: false, error: null, favicon: '', url: '', title: '', hibernated: false });
+    return status.get(id);
+  }
+
+  function hostOf(url) {
+    try { return new URL(url).host; } catch { return ''; }
+  }
+
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  // ---------------- 标签栏 ----------------
+  // 内置 logo：服务自带 icon 字段 > key 别名 > 域名匹配。命中就用本地矢量图，
+  // 这样不用点开、也不用等网站把 favicon 传回来，标签栏一上来就是各家 logo。
+  const ICON_TABLE = (window.AIHUB_ICONS && window.AIHUB_ICONS) || { files: {}, variants: {}, hosts: {}, aliases: {} };
+
+  /** 当前是不是深色主题（由主进程的 nativeTheme.themeSource 决定） */
+  function prefersDark() {
+    return !window.matchMedia || window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  /** 服务 -> 内置图标 key（认不出返回空字符串） */
+  function builtinIconKey(svc) {
+    const files = ICON_TABLE.files || {};
+    const aliases = ICON_TABLE.aliases || {};
+    const hosts = ICON_TABLE.hosts || {};
+    const pick = (key) => {
+      if (!key) return '';
+      if (files[key]) return key;
+      const alias = aliases[key];
+      if (alias && files[alias]) return alias;
+      return '';
+    };
+    let hit = pick(svc.icon);
+    if (!hit) {
+      const raw = String(svc.icon || '').trim().toLowerCase();
+      if (raw) hit = pick(raw);
+    }
+    if (!hit) {
+      const host = hostOf(svc.url).toLowerCase().replace(/^www\./, '');
+      if (host) {
+        hit = pick(hosts[host]);
+        if (!hit) {
+          // 逐级往上找：chat.kimi.com -> kimi.com
+          const parts = host.split('.');
+          for (let i = 1; i < parts.length && !hit; i += 1) hit = pick(hosts[parts.slice(i).join('.')]);
+        }
+        if (!hit) {
+          const flat = host.replace(/[^a-z0-9]/g, '');
+          for (const key of Object.keys(files)) {
+            if (key.length >= 4 && flat.includes(key)) { hit = key; break; }
+          }
+        }
+      }
+    }
+    if (!hit) {
+      const name = String(svc.name || '').trim().toLowerCase();
+      if (name) hit = pick(name);
+    }
+    return hit;
+  }
+
+  /** 图标 key -> 当前主题下该加载的文件；深/浅主题各有一套变体，避免给 logo 垫白底 */
+  function iconPathFor(key) {
+    if (!key) return '';
+    const base = (ICON_TABLE.files || {})[key] || '';
+    const variant = ((ICON_TABLE.variants || {})[key]) || {};
+    const path = prefersDark() ? (variant.dark || base) : (variant.light || base);
+    return path || base;
+  }
+
+  /** 服务 -> 当前主题下该用的内置图标路径（认不出返回空） */
+  function builtinIcon(svc) {
+    return iconPathFor(builtinIconKey(svc));
+  }
+
+  // 标签栏用「就地更新」而不是每次重建：
+  // 状态消息（标题 / favicon / 加载中）来得很频繁，整条重建会重排 + 重放动画，看起来就是卡顿 + 闪。
+  const tabNodes = new Map(); // id -> { btn, img, dot, spin, no }
+
+  function makeDot() {
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    return dot;
+  }
+
+  function tabNodeFor(svc) {
+    const btn = document.createElement('button');
+    btn.className = 'tab';
+    btn.dataset.id = svc.id;
+    btn.draggable = true;
+    btn.addEventListener('click', () => window.api.activate(svc.id));
+    // 中键 = 重新加载该标签
+    btn.addEventListener('auxclick', (event) => {
+      if (event.button === 1) {
+        event.preventDefault();
+        window.api.reload(svc.id);
+      }
+    });
+    // 右键 = 把它加进 / 移出分屏
+    btn.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      togglePane(svc.id);
+    });
+
+    const img = document.createElement('img');
+    img.className = 'fav';
+    img.alt = '';
+    img.hidden = true;
+    const dot = makeDot();
+    const name = document.createElement('span');
+    name.className = 'name';
+    const spin = document.createElement('span');
+    spin.className = 'spin';
+    spin.hidden = true;
+    const no = document.createElement('span');
+    no.className = 'pane-no';
+    no.hidden = true;
+
+    // × = 把这个标签从顶栏收起来（不是删除：服务和登录态都留着，设置里能放回来）
+    const close = document.createElement('span');
+    close.className = 'close';
+    close.setAttribute('role', 'button');
+    close.title = '从顶栏收起（登录状态保留，可在设置里放回来）';
+    close.innerHTML = svg('close');
+    close.addEventListener('click', async (event) => {
+      // 不加这两句，点 × 会先把这个标签切成当前标签，再收起来
+      event.preventDefault();
+      event.stopPropagation();
+      await hideTab(svc.id, svc.name);
+    });
+    // × 自己不参与拖拽，否则按住它拖会拖出一个「幽灵标签」
+    close.addEventListener('dragstart', (event) => { event.preventDefault(); event.stopPropagation(); });
+
+    btn.append(img, dot, name, spin, no, close);
+    bindTabDrag(btn, svc.id);
+
+    // favicon 加载失败就退回小圆点（只在还没换成内置 logo 时才退）
+    img.addEventListener('error', () => {
+      if (img.dataset.local === '1') return;
+      img.hidden = true;
+      dot.hidden = false;
+    });
+
+    const node = { btn, img, dot, name, spin, no, close };
+    tabNodes.set(svc.id, node);
+    return node;
+  }
+
+  // ---- 拖拽调整标签顺序 ----
+  // 用原生 HTML5 拖放而不是 pointer 事件：标签栏本身是 -webkit-app-region: drag 的窗口拖动区，
+  // 自己用 pointermove 模拟会和「拖动窗口」打架；draggable 元素的拖拽优先级更高，不会误拖窗口。
+  let tabDrag = null; // { id }
+
+  function clearDropMarks() {
+    for (const node of tabNodes.values()) {
+      node.btn.classList.remove('drop-before', 'drop-after');
+    }
+  }
+
+  function bindTabDrag(btn, id) {
+    btn.addEventListener('dragstart', (event) => {
+      tabDrag = { id };
+      btn.classList.add('dragging');
+      try {
+        event.dataTransfer.effectAllowed = 'move';
+        // Firefox/Chromium 都要求 dragstart 里写点东西，否则后续 drag 事件不触发
+        event.dataTransfer.setData('text/plain', id);
+      } catch (err) { /* 忽略：拿不到 dataTransfer 也不影响自家的拖拽状态 */ }
+    });
+
+    btn.addEventListener('dragover', (event) => {
+      if (!tabDrag || tabDrag.id === id) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      // 落在标签的左半边就插到它前面，右半边就插到后面
+      const rect = btn.getBoundingClientRect();
+      const after = event.clientX > rect.left + rect.width / 2;
+      clearDropMarks();
+      btn.classList.add(after ? 'drop-after' : 'drop-before');
+    });
+
+    btn.addEventListener('dragleave', () => {
+      btn.classList.remove('drop-before', 'drop-after');
+    });
+
+    btn.addEventListener('drop', async (event) => {
+      if (!tabDrag || tabDrag.id === id) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = btn.getBoundingClientRect();
+      const after = event.clientX > rect.left + rect.width / 2;
+      const dragged = tabDrag.id;
+      clearDropMarks();
+      await moveTab(dragged, id, after);
+    });
+
+    // dragend 一定会触发（包括拖到窗口外松手），收尾放这里才不会留下半透明的标签
+    btn.addEventListener('dragend', () => {
+      btn.classList.remove('dragging');
+      clearDropMarks();
+      tabDrag = null;
+    });
+  }
+
+  async function moveTab(dragId, targetId, after) {
+    // 只排「顶栏上看得见的」，主进程会把收起来的服务按原相对位置塞回去
+    const ids = state.services.filter((s) => !s.hidden).map((s) => s.id);
+    const from = ids.indexOf(dragId);
+    if (from < 0) return;
+    ids.splice(from, 1);
+    const at = ids.indexOf(targetId);
+    if (at < 0) return;
+    ids.splice(after ? at + 1 : at, 0, dragId);
+    const res = await window.api.reorderServices(ids);
+    if (!res || !res.ok) toast((res && res.error) || '排序失败', true);
+  }
+
+  async function hideTab(id, name) {
+    const res = await window.api.setServiceHidden(id, true);
+    if (!res || !res.ok) return toast((res && res.error) || '收起失败', true);
+    toastAction('已收起「' + name + '」，可在设置里放回来', '撤销', async () => {
+      const back = await window.api.setServiceHidden(id, false);
+      if (!back || !back.ok) toast((back && back.error) || '放回失败', true);
+    }, 6000);
+  }
+
+  function syncTab(svc, node) {
+    const st = statusOf(svc.id);
+    const paneIndex = state.panes.indexOf(svc.id);
+    const { btn, img, dot, name, spin, no } = node;
+
+    const cls = 'tab'
+      + (svc.id === state.activeId ? ' active' : '')
+      + (paneIndex >= 0 ? ' pane' : '');
+    if (btn.className !== cls) btn.className = cls;
+    const err = st.error ? '1' : '0';
+    if (btn.dataset.error !== err) btn.dataset.error = err;
+    const naps = st.hibernated ? '1' : '0';
+    if (btn.dataset.hibernated !== naps) btn.dataset.hibernated = naps;
+    const color = svc.color || '';
+    if (btn.style.getPropertyValue('--dot') !== color) btn.style.setProperty('--dot', color);
+
+    const marks = [];
+    if (paneIndex >= 0 && state.panes.length > 1) marks.push(`分屏第 ${paneIndex + 1} 栏`);
+    if (svc.id === state.activeId) marks.push('当前焦点');
+    if (st.hibernated) marks.push('已休眠 · 点开自动恢复');
+    const title = (st.title ? svc.name + ' — ' + st.title : svc.name + '\n' + svc.url)
+      + (marks.length ? '\n（' + marks.join(' · ') + '）' : '');
+    if (btn.title !== title) btn.title = title;
+
+    if (name.textContent !== svc.name) name.textContent = svc.name;
+
+    // 图标：内置 logo 优先（不依赖点开、也不怕站点不给 favicon）；没有内置图才用网站 favicon / 圆点
+    const localIcon = builtinIcon(svc);
+    const src = localIcon || st.favicon || '';
+    if (src) {
+      if (img.getAttribute('src') !== src) {
+        img.dataset.local = localIcon ? '1' : '0';
+        img.src = src;
+      }
+      if (img.hidden) img.hidden = false;
+      if (!dot.hidden) dot.hidden = true;
+    } else {
+      if (!img.hidden) { img.hidden = true; img.removeAttribute('src'); }
+      if (dot.hidden) dot.hidden = false;
+    }
+
+    const showSpin = Boolean(st.loading);
+    if (spin.hidden !== !showSpin) spin.hidden = !showSpin;
+    const showNo = !showSpin && paneIndex >= 0 && state.panes.length > 1;
+    if (no.hidden !== !showNo) no.hidden = !showNo;
+    if (showNo) {
+      const text = String(paneIndex + 1);
+      if (no.textContent !== text) no.textContent = text;
+    }
+  }
+
+  function renderTabs() {
+    // 删掉已经不在的服务，以及从顶栏收起来的服务（节点一起丢掉，放回来时重建）
+    const shown = state.services.filter((svc) => !svc.hidden);
+    const alive = new Set(shown.map((s) => s.id));
+    for (const [id, node] of tabNodes) {
+      if (!alive.has(id)) {
+        node.btn.remove();
+        tabNodes.delete(id);
+      }
+    }
+    shown.forEach((svc, index) => {
+      const node = tabNodes.get(svc.id) || tabNodeFor(svc);
+      syncTab(svc, node);
+      // 顺序只在真的不对时才动 DOM
+      if (tabsEl.children[index] !== node.btn) {
+        tabsEl.insertBefore(node.btn, tabsEl.children[index] || null);
+      }
+    });
+    // 只剩一个标签时藏掉 ×：收起来顶栏就空了，主进程也会拒绝
+    const only = shown.length <= 1;
+    for (const node of tabNodes.values()) {
+      if (node.close) node.close.hidden = only;
+    }
+  }
+
+  function renderTools() {
+    const active = state.services.find((s) => s.id === state.activeId);
+    const splitBtn = $('btn-split');
+    const multi = state.panes.length > 1;
+    splitBtn.classList.toggle('on', multi);
+    // 图标和角标都就地更新：反复 innerHTML = 反复重建 + 重放动画
+    let badge = splitBtn.querySelector('.badge');
+    if (multi) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'badge';
+        splitBtn.appendChild(badge);
+      }
+      const text = String(state.panes.length);
+      if (badge.textContent !== text) badge.textContent = text;
+    } else if (badge) {
+      badge.remove();
+    }
+    const tip = multi
+      ? `分屏中：${state.panes.length} 栏（点击管理）`
+      : '左右分屏显示多个服务（可拖动分隔条调宽度）';
+    if (splitBtn.title !== tip) splitBtn.title = tip;
+
+    const st = active ? statusOf(active.id) : null;
+    hostEl.textContent = st && st.url ? hostOf(st.url) : '';
+    if (!active) {
+      stageMsg.textContent = '还没有任何服务，点右上角 ⚙ 添加一个吧。';
+      return;
+    }
+    if (st.error) {
+      stageMsg.textContent = '「' + active.name + '」加载失败：' + (st.error.desc || st.error.code) +
+        '。按 F5 重试，或在设置里检查网址。';
+    } else if (st.loading) {
+      stageMsg.textContent = '正在打开「' + active.name + '」…';
+    } else {
+      const acc = prettyAccel((state.hotkey && state.hotkey.accelerator) || 'Alt+Space');
+      const mod = IS_MAC ? '⌘' : 'Ctrl+';
+      stageMsg.textContent = '全局唤出：' + acc
+        + ' · ' + (IS_MAC ? '⌃Tab' : 'Ctrl+Tab') + ' 切换标签'
+        + ' · ' + mod + '1~9 直达 · F5 刷新 · ' + mod + ', 设置';
+    }
+  }
+
+  function renderAll() {
+    renderTabs();
+    renderTools();
+    // 设置面板里的「预加载」开关、「外观主题」和「全局快捷键」跟着状态走
+    const box = $('pref-preload');
+    if (box) box.checked = state.preload !== false;
+    // v4：常驻置顶 / 标签栏显隐 / 版本号
+    const ontop = $('pref-ontop');
+    if (ontop) ontop.checked = state.alwaysOnTop !== false;
+    const tabbar = $('pref-tabbar');
+    if (tabbar) tabbar.checked = state.tabBarVisible !== false;
+    const ver = $('ver-line');
+    if (ver && state.version) ver.textContent = '当前版本：v' + state.version;
+    document.body.classList.toggle('no-tabbar', state.tabBarVisible === false);
+    renderNap({ instant: true });
+    renderTheme({ instant: true });
+    renderHotkey();
+  }
+
+  // ---------------- 分屏：分隔条 ----------------
+  let geometry = { panes: [], dividers: [], gap: 4, minPaneWidth: 260, top: 44, overlay: false };
+  let drag = null;
+
+  function renderLayout(next) {
+    geometry = Object.assign({}, geometry, next || {});
+
+    while (splitLayer.children.length > geometry.dividers.length) {
+      splitLayer.lastElementChild.remove();
+    }
+    while (splitLayer.children.length < geometry.dividers.length) {
+      const el = document.createElement('div');
+      el.className = 'divider';
+      el.addEventListener('pointerdown', onDividerDown);
+      el.addEventListener('dblclick', onDividerDoubleClick);
+      splitLayer.appendChild(el);
+    }
+    Array.from(splitLayer.children).forEach((el, i) => {
+      const info = geometry.dividers[i];
+      el.dataset.index = String(info.index);
+      // 视觉上缝隙只有 4px，但拖动热区要宽一些，鼠标不用精确压在细线上
+      el.style.left = (info.hitX != null ? info.hitX : info.x) + 'px';
+      el.style.width = (info.hitWidth != null ? info.hitWidth : info.width) + 'px';
+      el.title = '拖动调整两栏宽度，双击均分';
+    });
+
+    const multi = geometry.panes.length > 1;
+    splitLayer.hidden = geometry.overlay || !geometry.dividers.length;
+    // 多栏时隐藏中央的占位文字：不然它会从缝隙里露出来
+    stageEl.style.visibility = multi ? 'hidden' : '';
+  }
+
+  function onDividerDown(event) {
+    if (event.button !== 0) return;
+    if (drag) finishDrag();               // 上一次手势没收到 pointerup 时兜底
+    const el = event.currentTarget;
+    drag = {
+      index: Number(el.dataset.index) || 0,
+      pointerId: event.pointerId,
+      el,
+      x: event.clientX,
+      sentAt: 0,
+      timer: 0,
+    };
+    el.classList.add('dragging');
+    document.body.classList.add('resizing');
+    try { el.setPointerCapture(event.pointerId); } catch (err) { /* 忽略 */ }
+    event.preventDefault();
+    window.addEventListener('pointermove', onDividerMove);
+    window.addEventListener('pointerup', onDividerUp);
+    window.addEventListener('pointercancel', onDividerUp);
+    window.addEventListener('blur', onDividerUp);
+  }
+
+  function onDividerMove(event) {
+    if (!drag) return;
+    drag.x = event.clientX;
+    // 节流用时间戳 + setTimeout，刻意不用 requestAnimationFrame：
+    // 窗口被其它窗口遮挡时 Chromium 会暂停出帧，rAF 不再触发，拖拽就会卡死。
+    const now = performance.now();
+    if (now - drag.sentAt < 8) {
+      if (!drag.timer) {
+        drag.timer = setTimeout(() => {
+          if (!drag) return;
+          drag.timer = 0;
+          drag.sentAt = performance.now();
+          window.api.dragDivider(drag.index, drag.x);
+        }, 8);
+      }
+      return;
+    }
+    drag.sentAt = now;
+    window.api.dragDivider(drag.index, drag.x);
+  }
+
+  function onDividerUp() {
+    finishDrag();
+  }
+
+  function onDividerDoubleClick(event) {
+    event.preventDefault();
+    window.api.endDrag({ index: Number(event.currentTarget.dataset.index) || 0, equalize: true });
+  }
+
+  function finishDrag(extra) {
+    if (!drag) return;
+    const current = drag;
+    drag = null;
+    if (current.timer) clearTimeout(current.timer);
+    current.el.classList.remove('dragging');
+    document.body.classList.remove('resizing');
+    window.removeEventListener('pointermove', onDividerMove);
+    window.removeEventListener('pointerup', onDividerUp);
+    window.removeEventListener('pointercancel', onDividerUp);
+    window.removeEventListener('blur', onDividerUp);
+    window.api.endDrag(Object.assign({ index: current.index }, extra || {}));
+  }
+
+  // 页面任何地方的新按下都意味着上一次拖拽手势已经结束
+  document.addEventListener('pointerdown', () => { if (drag) finishDrag(); }, true);
+
+  // ---------------- 分屏菜单 ----------------
+  // 已经提示过的版本号：state 每次广播都会走到这儿，不记一下会反复弹
+  let notifiedUpdate = '';
+
+  function applyState(next) {
+    if (!next) return;
+    state = next;
+    renderAll();
+    if (overlayOpen) renderServiceList();
+    maybeNotifyUpdate(next.update);
+  }
+
+  function maybeNotifyUpdate(update) {
+    if (!update || update.status !== 'ready' || !update.version) return;
+    if (notifiedUpdate === update.version) return;
+    notifiedUpdate = update.version;
+    toastAction('新版本 ' + update.version + ' 已下载', '立即重启', () => window.api.installUpdate());
+  }
+
+  async function togglePane(id) {
+    const inLayout = state.panes.includes(id);
+    const next = inLayout
+      ? state.panes.filter((paneId) => paneId !== id)
+      : state.panes.concat(id);
+    const res = await window.api.setPanes(next);
+    if (res && res.ok === false) return toast(res.error || '分屏设置失败', true);
+    if (res && res.state) applyState(res.state);
+    return null;
+  }
+
+  /**
+   * 点 ⇔ 弹出分屏菜单。
+   * 菜单是主进程用 Menu.popup 弹的 Windows 原生菜单：它是独立的弹出窗口，
+   * 浮在所有服务页面之上，所以既不会被视图挡住，也不用让布局腾地方。
+   * 这里只负责把按钮的位置报过去，菜单项和勾选状态由主进程按 config 生成。
+   */
+  function openSplitMenu() {
+    const rect = $('btn-split').getBoundingClientRect();
+    window.api.openSplitMenu({ x: Math.round(rect.left), y: Math.round(rect.bottom + 4) });
+  }
+
+  // ---------------- 设置面板 ----------------
+  // 进出都用同一套「淡入 + 轻微上移」的路径（进出同路，空间上才连贯）。
+  // 面板本身是页面元素，而服务视图是原生层、永远盖在页面上方，所以：
+  //   · 打开时立刻让主进程把视图摘掉（不然面板被视图挡住，点了没反应）
+  //   · 关闭时等淡出动画播完再让视图回来（否则视图会「啪」地盖住正在消失的面板）
+  let overlayCloseTimer = null;
+
+  function setOverlay(open) {
+    if (overlayCloseTimer) {
+      clearTimeout(overlayCloseTimer);
+      overlayCloseTimer = null;
+    }
+    // 状态已经一致就直接返回（避免重复触发进场动画）
+    if (open === overlayOpen && overlay.hidden === !open) return;
+    overlayOpen = open;
+
+    if (open) {
+      overlay.hidden = false;
+      overlay.classList.remove('closing');
+      // 下一帧再加 open，保证过渡真的跑起来（同一帧内改两次类名会被合并）
+      requestAnimationFrame(() => overlay.classList.add('open'));
+      window.api.setOverlay(true);
+      confirming.clear();
+      renderServiceList({ stagger: true });
+      // 面板可见后才知道按钮多宽，这时候再摆主题滑块
+      requestAnimationFrame(() => renderTheme({ instant: true }));
+      return;
+    }
+
+    overlay.classList.remove('open');
+    overlay.classList.add('closing');
+    const finish = () => {
+      if (overlayOpen) return;              // 中途又被打开了，就别收
+      overlay.hidden = true;
+      overlay.classList.remove('closing');
+      window.api.setOverlay(false);
+    };
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    overlayCloseTimer = setTimeout(finish, reduced ? 190 : 150);
+  }
+
+  function serviceRow(svc) {
+    const row = document.createElement('div');
+    row.className = 'svc-row'
+      + (confirming.has(svc.id) ? ' confirming' : '')
+      + (svc.hidden ? ' hidden-svc' : '');
+
+    // 左侧：服务 logo（内置图标优先，没有就用标签颜色的小圆点）
+    const badge = document.createElement('span');
+    badge.className = 'svc-badge';
+    badge.style.setProperty('--dot', svc.color);
+    const badgeSrc = builtinIcon(svc);
+    if (badgeSrc) {
+      const img = document.createElement('img');
+      img.src = badgeSrc;
+      img.alt = '';
+      badge.appendChild(img);
+    } else {
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      badge.appendChild(dot);
+    }
+
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.value = svc.name;
+    name.maxLength = 40;
+
+    const url = document.createElement('input');
+    url.type = 'url';
+    url.value = svc.url;
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+
+    if (confirming.has(svc.id)) {
+      const note = document.createElement('div');
+      note.className = 'confirm-text';
+      note.textContent = '确认删除「' + svc.name + '」？删除后该服务不再显示在标签栏。';
+      row.appendChild(note);
+
+      const delKeep = document.createElement('button');
+      delKeep.className = 'btn danger';
+      delKeep.textContent = '删除（保留登录数据）';
+      delKeep.addEventListener('click', () => doRemove(svc.id, false));
+
+      const delWipe = document.createElement('button');
+      delWipe.className = 'btn danger';
+      delWipe.textContent = '删除并清除登录数据';
+      delWipe.addEventListener('click', () => doRemove(svc.id, true));
+
+      const cancel = document.createElement('button');
+      cancel.className = 'btn ghost';
+      cancel.textContent = '取消';
+      cancel.addEventListener('click', () => {
+        confirming.delete(svc.id);
+        renderServiceList();
+      });
+
+      actions.append(delKeep, delWipe, cancel);
+    } else {
+      const save = document.createElement('button');
+      save.className = 'btn primary';
+      save.textContent = '保存';
+      save.addEventListener('click', async () => {
+        const res = await window.api.updateService({
+          id: svc.id,
+          name: name.value,
+          url: url.value,
+        });
+        if (!res || !res.ok) return toast((res && res.error) || '保存失败', true);
+        toast('已保存「' + name.value.trim() + '」');
+      });
+
+      const dev = document.createElement('button');
+      dev.className = 'btn ghost';
+      dev.textContent = '开发者工具';
+      dev.title = '打开该服务页面的开发者工具，排查登录或加载问题';
+      dev.addEventListener('click', async () => {
+        window.api.activate(svc.id);
+        setOverlay(false);
+        window.api.devtools(svc.id);
+      });
+
+      // 收起 / 放回：只影响标签栏是否显示，服务配置和登录态都原样留着，
+      // 所以这里和「删除」分开放，避免用户为了让顶栏清爽而把登录态删掉。
+      const vis = document.createElement('button');
+      vis.className = 'btn ghost';
+      vis.textContent = svc.hidden ? '放回顶栏' : '从顶栏收起';
+      vis.title = svc.hidden
+        ? '重新在标签栏显示这个服务'
+        : '标签栏上不再显示，服务配置和登录态都保留，随时可以放回来';
+      vis.addEventListener('click', async () => {
+        const res = await window.api.setServiceHidden(svc.id, !svc.hidden);
+        if (!res || !res.ok) return toast((res && res.error) || '操作失败', true);
+        toast(svc.hidden ? '已放回「' + svc.name + '」' : '已收起「' + svc.name + '」');
+      });
+
+      const del = document.createElement('button');
+      del.className = 'btn danger';
+      del.textContent = '删除';
+      del.addEventListener('click', () => {
+        confirming.add(svc.id);
+        renderServiceList();
+      });
+
+      actions.append(save, vis, dev, del);
+    }
+
+    row.append(badge, name, url, actions);
+    return row;
+  }
+
+  async function doRemove(id, wipe) {
+    const res = await window.api.removeService(id, wipe);
+    confirming.delete(id);
+    if (!res || !res.ok) return toast((res && res.error) || '删除失败', true);
+    if (res.state) {
+      state = res.state;
+      renderAll();
+    }
+    renderServiceList();
+    toast(wipe ? '已删除并清除登录数据' : '已删除');
+  }
+
+  function renderServiceList({ stagger = false } = {}) {
+    listEl.textContent = '';
+    listEl.classList.toggle('enter', stagger);
+    state.services.forEach((svc, index) => {
+      const row = serviceRow(svc);
+      const actionsEl = row.querySelector('div.actions');
+      if (svc.hidden) {
+        const tag = document.createElement('span');
+        tag.className = 'pill off';
+        tag.textContent = '已收起';
+        tag.title = '不在标签栏显示；登录态还在';
+        actionsEl.prepend(tag);
+      }
+      if (!svc.custom) {
+        const tag = document.createElement('span');
+        tag.className = 'pill';
+        tag.textContent = '内置';
+        actionsEl.prepend(tag);
+      }
+      // 错开 35ms 依次落位（只动画一次；后面普通重渲染不会再放动画）
+      row.style.setProperty('--i', String(Math.min(index, 8)));
+      listEl.appendChild(row);
+    });
+    $('panel-footer').innerHTML =
+      'Aihub v' + escapeHtml(appVersion || '0.1.0') +
+      ' · 每个服务的登录态独立保存在本机，不会上传到任何服务器。<br>' +
+      '数据目录：<code>' + escapeHtml(state.userData || '%APPDATA%\\Aihub') + '</code>（卸载后不会被删除）。';
+  }
+
+  // ---------------- 事件绑定 ----------------
+  $('btn-reload').innerHTML = svg('reload');
+  $('btn-home').innerHTML = svg('home');
+  $('btn-split').innerHTML = svg('split');
+  $('btn-add').innerHTML = svg('plus');
+  $('btn-settings').innerHTML = svg('settings');
+  $('btn-close').innerHTML = svg('close');
+
+  $('btn-reload').addEventListener('click', () => window.api.reload(null));
+  $('btn-home').addEventListener('click', () => window.api.home(null));
+  $('btn-settings').addEventListener('click', () => setOverlay(true));
+  $('btn-close').addEventListener('click', () => setOverlay(false));
+  $('btn-add').addEventListener('click', () => {
+    setOverlay(true);
+    setTimeout(() => $('add-name').focus(), 30);
+  });
+  $('btn-split').addEventListener('click', () => openSplitMenu());
+
+  $('btn-add-confirm').addEventListener('click', async () => {
+    const name = $('add-name').value;
+    const url = $('add-url').value;
+    // 颜色由主进程按内置站点自动配（没有内置 logo 时才用得上），设置里不再显示色板
+    const res = await window.api.addService({ name, url });
+    if (!res || !res.ok) return toast((res && res.error) || '添加失败', true);
+    $('add-name').value = '';
+    $('add-url').value = '';
+    toast('已添加「' + name.trim() + '」');
+    if (res.id) window.api.activate(res.id);
+  });
+
+  $('add-url').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') $('btn-add-confirm').click();
+  });
+
+  // ---------------- 启动时预加载 ----------------
+  $('pref-preload').addEventListener('change', async (event) => {
+    const on = Boolean(event.target.checked);
+    const res = await window.api.setPreload(on);
+    if (!res || !res.ok) return toast('设置失败', true);
+    state.preload = Boolean(res.preload);
+    toast(on ? '已开启预加载：启动时把所有标签的页面都加载一遍' : '已关闭预加载：只加载标签栏当前要显示的那几栏');
+  });
+
+  // ---------------- 窗口常驻置顶 ----------------
+  $('pref-ontop').addEventListener('change', async (event) => {
+    const on = Boolean(event.target.checked);
+    const res = await window.api.setAlwaysOnTop(on);
+    if (!res || !res.ok) return toast('设置失败', true);
+    state.alwaysOnTop = Boolean(res.alwaysOnTop);
+    toast(on ? '已开启常驻置顶：窗口会一直压在其它程序上面' : '已关闭常驻置顶');
+  });
+
+  // ---------------- 标签栏显示 / 收起 ----------------
+  $('pref-tabbar').addEventListener('change', async (event) => {
+    const visible = Boolean(event.target.checked);
+    const res = await window.api.setTabBar(visible);
+    if (!res || !res.ok) return toast('设置失败', true);
+    state.tabBarVisible = Boolean(res.tabBarVisible);
+    // 标签栏一收起，站点视图的顶边就从 44 变成 0，整个外壳要重画
+    document.body.classList.toggle('no-tabbar', !state.tabBarVisible);
+    toast(visible ? '标签栏已显示' : '标签栏已收起：再次打开设置可以放回来');
+  });
+
+  // ---------------- 版本与强制更新 ----------------
+  (function wireUpdate() {
+    const hint = $('update-hint');
+    const btnCheck = $('btn-check-update');
+    const btnForce = $('btn-force-update');
+    if (!hint || !btnCheck || !btnForce) return;
+
+    window.api.getVersion().then((v) => {
+      const line = $('ver-line');
+      if (line) line.textContent = '当前版本：v' + v;
+    }).catch(() => {});
+
+    btnCheck.addEventListener('click', async () => {
+      btnCheck.disabled = true;
+      hint.textContent = '正在检查…';
+      try {
+        const info = await window.api.checkUpdate();
+        if (info.error) {
+          hint.textContent = '检查失败：' + info.error;
+        } else if (info.available) {
+          hint.textContent = '发现新版本 v' + info.version + (info.notes ? '：' + info.notes : '');
+          btnForce.hidden = false;
+        } else {
+          hint.textContent = '已是最新版本（v' + info.current + '）';
+          btnForce.hidden = true;
+        }
+      } catch (err) {
+        hint.textContent = '检查失败：' + err;
+      } finally {
+        btnCheck.disabled = false;
+      }
+    });
+
+    // 强制更新：Rust 侧会先把所有 webview 和窗口关干净，再让安装器上场，
+    // 所以不会再出现「Aihub 无法关闭，请手动关闭它」那个对话框。
+    btnForce.addEventListener('click', async () => {
+      btnForce.disabled = true;
+      btnCheck.disabled = true;
+      hint.textContent = '正在下载…';
+      try {
+        await window.api.installUpdate();
+      } catch (err) {
+        hint.textContent = '更新失败：' + err;
+        btnForce.disabled = false;
+        btnCheck.disabled = false;
+      }
+    });
+
+    window.api.onUpdateProgress((p) => {
+      if (!p) return;
+      if (p.phase === 'downloading') hint.textContent = '正在下载新版本…';
+      if (p.phase === 'closing') hint.textContent = '正在关闭所有页面，准备安装…';
+    });
+  })();
+
+  // ---------------- 后台标签自动休眠 ----------------
+  const NAP_LABEL = { 15: '闲置 15 分钟', 30: '闲置 30 分钟', 120: '闲置 2 小时' };
+
+  function napValue() {
+    const nap = state.hibernate || {};
+    return nap.enabled === false ? 'off' : String(nap.minutes || 30);
+  }
+
+  function renderNap({ instant = false } = {}) {
+    const current = napValue();
+    const btns = Array.from(document.querySelectorAll('#nap-seg .seg-btn'));
+    let index = 0;
+    btns.forEach((btn, i) => {
+      const on = btn.dataset.minutes === current;
+      btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      if (on) index = i;
+    });
+    const thumb = $('nap-thumb');
+    if (!thumb) return;
+    thumb.classList.toggle('instant', instant);
+    thumb.style.transform = `translateX(${index * 100}%)`;
+    if (instant) {
+      void thumb.offsetWidth;
+      requestAnimationFrame(() => thumb.classList.remove('instant'));
+    }
+  }
+
+  document.querySelectorAll('#nap-seg .seg-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const want = btn.dataset.minutes;
+      const payload = want === 'off' ? { enabled: false } : { enabled: true, minutes: Number(want) };
+      const res = await window.api.setHibernate(payload);
+      if (!res || !res.ok) return toast((res && res.error) || '设置失败', true);
+      state.hibernate = res.hibernate;
+      renderNap();
+      toast(want === 'off' ? '已关闭后台休眠：所有打开过的标签都会一直留在内存里'
+        : '后台标签' + NAP_LABEL[Number(want)] + '后自动休眠，点回去自动恢复');
+    });
+  });
+
+  // ---------------- 外观主题 ----------------
+  const THEME_LABEL = { dark: '深色', light: '浅色', system: '跟随系统' };
+
+  function renderTheme({ instant = false } = {}) {
+    const current = state.theme || 'system';
+    const btns = Array.from(document.querySelectorAll('#theme-seg .seg-btn'));
+    let index = 0;
+    btns.forEach((btn, i) => {
+      const on = btn.dataset.theme === current;
+      btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      if (on) index = i;
+    });
+    // 滑块只做 translateX（宽度是等分的），不做 width 动画
+    const thumb = $('theme-thumb');
+    if (!thumb) return;
+    thumb.classList.toggle('instant', instant);
+    thumb.style.transform = `translateX(${index * 100}%)`;
+    if (instant) {
+      // 强制回流一次，下一帧再打开过渡，避免首次定位也滑一段
+      void thumb.offsetWidth;
+      requestAnimationFrame(() => thumb.classList.remove('instant'));
+    }
+  }
+
+  document.querySelectorAll('#theme-seg .seg-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const want = btn.dataset.theme;
+      const res = await window.api.setTheme(want);
+      if (!res || !res.ok) return toast('设置失败', true);
+      state.theme = res.theme;
+      renderTheme();
+      // 深浅色一变，内置 logo 要换成对应的变体（黑 logo 变白、白 logo 变黑）
+      renderTabs();
+      renderServiceList();
+      toast('外观已切换为「' + (THEME_LABEL[res.theme] || res.theme) + '」');
+    });
+  });
+
+  // 系统深浅色变化时（主题选「跟随系统」），标签栏和设置面板都要重画
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onSchemeChange = () => {
+      renderTabs();
+      if (!overlay.hidden) renderServiceList();
+    };
+    if (mq.addEventListener) mq.addEventListener('change', onSchemeChange);
+    else if (mq.addListener) mq.addListener(onSchemeChange);
+  }
+
+  $('add-name').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') $('add-url').focus();
+  });
+
+  // ---------------- 全局快捷键（老板键） ----------------
+  // 面板里只做三件事：显示当前组合键与注册状态、录制新的组合键、几个开关。
+  // 真正往系统里注册的是主进程的 globalShortcut（系统级），这里录完立刻交给它，
+  // 注册失败（被别的程序占用）也会立刻把原因显示出来，而不是「按了没反应」。
+  const hkKey = $('hk-key');
+  const hkHint = $('hk-hint');
+  const hkPresets = $('hk-presets');
+  let recording = false;
+
+  const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+
+  // 提示语里的修饰键写法要跟着平台走：macOS 用户看到「Ctrl」会去找键盘上不存在的键
+  const MODIFIER_HINT = IS_MAC ? '⌘ / ⌥ / ⇧' : 'Ctrl / Alt / Shift';
+
+  // Electron 的 accelerator 里 Alt 在 mac 上就是 ⌥、Super 就是 ⌘，但字面量还是英文单词。
+  // mac 用户看惯了符号，"Alt+Space" 会让人以为要找一个叫 Alt 的键（键帽上写的是 option/⌥）。
+  const MAC_SYMBOLS = { Ctrl: '⌃', Control: '⌃', Alt: '⌥', Option: '⌥', Shift: '⇧', Command: '⌘', Cmd: '⌘', Super: '⌘', Meta: '⌘' };
+  /** "Command+Shift+Space" -> mac: "⌘⇧Space"；其它平台原样返回 */
+  function prettyAccel(acc) {
+    const text = String(acc || '');
+    if (!IS_MAC || !text) return text;
+    const parts = text.split('+');
+    const key = parts.pop();
+    // mac 的习惯是修饰键符号连着写、和主键之间不加加号
+    return parts.map((m) => MAC_SYMBOLS[m] || (m + '+')).join('') + key;
+  }
+
+  /** 键盘事件 -> Electron accelerator 里主键的名字（认不出返回空） */
+  function keyNameFromEvent(event) {
+    const code = event.code || '';
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+    if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+    if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+    const named = {
+      Space: 'Space', Tab: 'Tab', Enter: 'Enter', NumpadEnter: 'Enter',
+      Escape: 'Escape', Backspace: 'Backspace', Delete: 'Delete', Insert: 'Insert',
+      Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+      ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+      Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'",
+      BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+      Minus: '-', Equal: '=', Backquote: '`',
+    };
+    return named[code] || '';
+  }
+
+  /** 修饰键按主进程的固定顺序拼，保证显示出来的写法前后一致 */
+  function acceleratorFromEvent(event) {
+    const key = keyNameFromEvent(event);
+    if (!key) return '';
+    const mods = [];
+    if (event.ctrlKey) mods.push('Ctrl');
+    if (event.altKey) mods.push('Alt');
+    if (event.shiftKey) mods.push('Shift');
+    // mac 上 metaKey 就是 ⌘。Electron 的 Super 在 mac 上也会映射到 ⌘，但归一化后写法不同，
+    // 录出来的 'Super+Space' 和预设里的 'Command+Space' 对不上，选中态就点不亮了。
+    if (event.metaKey) mods.push(IS_MAC ? 'Command' : 'Super');
+    return mods.concat(key).join('+');
+  }
+
+  /**
+   * 常用组合键的一排快捷选项。列表由主进程按平台给（mac 上第二项就是 ⌘Space），
+   * 点一下直接套用；注册失败的原因照样会显示在下面的提示行里。
+   */
+  function renderPresets(current) {
+    const list = (state.hotkey && state.hotkey.presets) || [];
+    hkPresets.textContent = '';
+    hkPresets.hidden = !list.length;
+    for (const item of list) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = item.label || prettyAccel(item.accelerator);
+      btn.title = item.note || '';
+      if (item.accelerator === current) btn.classList.add('on');
+      btn.addEventListener('click', async () => {
+        if (item.accelerator === current) return;
+        const res = await applyHotkey({ accelerator: item.accelerator });
+        if (!res) return;
+        toast(res.registered
+          ? '唤出快捷键已改为 ' + prettyAccel(state.hotkey.accelerator)
+          : (res.error || (prettyAccel(item.accelerator) + ' 被占用，换一个试试')), !res.registered);
+      });
+      hkPresets.appendChild(btn);
+    }
+  }
+
+  function renderHotkey() {
+    const hk = state.hotkey || {};
+    const enabled = hk.enabled !== false;
+    const acc = hk.accelerator || 'Alt+Space';
+    $('hk-enabled').checked = enabled;
+    $('hk-pintop').checked = hk.pinTop !== false;
+    $('hk-tray').checked = hk.tray !== false;
+    $('hk-close').checked = hk.closeToTray !== false;
+    // 正在录制时不覆盖用户手上按的内容
+    if (!recording) hkKey.value = prettyAccel(acc);
+    renderPresets(acc);
+
+    let text = '';
+    let kind = '';
+    if (recording) {
+      text = '按下要用的组合键（Esc 取消）；建议带 ' + MODIFIER_HINT;
+    } else if (!enabled) {
+      text = '已关闭：不再占用系统级快捷键，窗口只能从任务栏或托盘唤出。';
+    } else if (hk.registered) {
+      text = '已生效：在任何程序里按 ' + prettyAccel(acc) + ' 都能唤出 / 收起窗口'
+        + (hk.pinTop !== false ? '（唤出时最高优先级置顶）' : '') + '。';
+      kind = 'ok';
+    } else {
+      text = '没有注册成功：' + (hk.error || '这个组合键可能已被其它程序占用')
+        + '。换成别的组合键，或先关掉占用它的程序。';
+      kind = 'warn';
+    }
+    hkHint.textContent = text;
+    hkHint.className = 'hk-hint' + (kind ? ' ' + kind : '');
+  }
+
+  function startRecording() {
+    if (recording) return;
+    recording = true;
+    hkKey.classList.add('recording');
+    // 真的把光标放进框里：否则「开始录制」和「结束录制（失焦）」不是一对，
+    // 点了框却没聚焦时按完组合键提示语会一直停在「按下要用的组合键」。
+    if (document.activeElement !== hkKey) hkKey.focus();
+    renderHotkey();
+  }
+
+  function stopRecording() {
+    if (!recording) return;
+    recording = false;
+    hkKey.classList.remove('recording');
+    renderHotkey();
+  }
+
+  /**
+   * 录制收尾：主动退出录制态，再顺手取消聚焦。
+   *
+   * 不能只靠 hkKey.blur() 来结束录制——窗口不在前台时（用户刚在别的程序里点了东西、
+   * 或者窗口是被脚本唤起来的），元素级的 focus / blur 事件不一定派发，
+   * 那样提示语会一直停在「按下要用的组合键」，让人以为没录上。
+   */
+  function finishRecording() {
+    stopRecording();
+    if (document.activeElement === hkKey) hkKey.blur();
+  }
+
+  async function applyHotkey(patch) {
+    const res = await window.api.setHotkey(patch);
+    if (!res || !res.ok) {
+      toast((res && res.error) || '快捷键设置失败', true);
+      renderHotkey();
+      return null;
+    }
+    state.hotkey = res.hotkey;
+    renderHotkey();
+    return res;
+  }
+
+  hkKey.addEventListener('focus', startRecording);
+  hkKey.addEventListener('blur', stopRecording);
+  // 光靠 focus 起录还不够稳：窗口在后台时、或者脚本直接 .focus() 时，focus 事件不一定派发，
+  // 结果就是「点了输入框但按什么键都不录」。所以点一下、或者有按键落到这个框上，都算开始录制。
+  hkKey.addEventListener('mousedown', startRecording);
+  hkKey.addEventListener('keydown', async (event) => {
+    if (!recording) startRecording();
+    event.preventDefault();
+    // 拦住冒泡：录制时按 Esc 不该顺手把设置面板关掉
+    event.stopPropagation();
+    const key = keyNameFromEvent(event);
+    const hasMod = event.ctrlKey || event.altKey || event.shiftKey || event.metaKey;
+    const isFunctionKey = /^F([1-9]|1[0-9]|2[0-4])$/.test(key);
+
+    if (key === 'Escape' && !hasMod) {
+      finishRecording();
+      return;
+    }
+    if (!key || !hasMod && !isFunctionKey) {
+      // 只按了修饰键：继续等主键；按了单个普通键：说清楚为什么不行
+      if (key) {
+        hkHint.className = 'hk-hint warn';
+        hkHint.textContent = '至少要带一个修饰键（' + MODIFIER_HINT + '），或者单用一个 F1~F24。';
+      }
+      return;
+    }
+    const accelerator = acceleratorFromEvent(event);
+    hkKey.value = prettyAccel(accelerator);
+    const res = await applyHotkey({ accelerator });
+    if (res) {
+      toast('唤出快捷键已改为 ' + prettyAccel(state.hotkey.accelerator));
+      // 录完就主动退出录制态：提示语要停在「已生效：Ctrl+Alt+F10」上
+      finishRecording();
+    }
+  });
+
+  $('hk-enabled').addEventListener('change', async (event) => {
+    const on = Boolean(event.target.checked);
+    const res = await applyHotkey({ enabled: on });
+    if (!res) return;
+    if (on && !res.registered) return toast(res.error || '快捷键注册失败，请换一个组合键', true);
+    toast(on
+      ? '已启用：按 ' + prettyAccel(state.hotkey.accelerator) + ' 唤出 / 收起窗口'
+      : '已关闭全局快捷键');
+  });
+
+  $('hk-pintop').addEventListener('change', (event) => applyHotkey({ pinTop: Boolean(event.target.checked) }));
+  $('hk-tray').addEventListener('change', (event) => applyHotkey({ tray: Boolean(event.target.checked) }));
+  $('hk-close').addEventListener('change', (event) => applyHotkey({ closeToTray: Boolean(event.target.checked) }));
+
+  $('hk-reset').addEventListener('click', async () => {
+    const fallback = (state.hotkey && state.hotkey.defaultAccelerator) || 'Alt+Space';
+    const res = await applyHotkey({ accelerator: fallback });
+    if (!res) return;
+    toast(res.registered
+      ? '已恢复默认快捷键 ' + prettyAccel(state.hotkey.accelerator)
+      : '已恢复默认，但 ' + prettyAccel(state.hotkey.accelerator) + ' 被其它程序占用，请换一个');
+  });
+
+  // ---------------- 账号迁移 ----------------
+  let pendingImport = null; // { file, summary }
+
+  function migrateNote(text, kind, title) {
+    const el = $('migrate-note');
+    el.textContent = text;
+    // 完整路径太长，正文里只放文件名，路径挂在 title 上（鼠标停一下就能看全）
+    if (title) el.title = title; else el.removeAttribute('title');
+    el.classList.toggle('warn', kind === 'warn');
+    el.classList.toggle('ok', kind === 'ok');
+  }
+
+  /** 12345 -> "12.1 KB"（导出结果里只需要一个量级，不必精确到字节） */
+  function prettyBytes(n) {
+    const bytes = Number(n) || 0;
+    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+  }
+
+  function migrateButtons(busy) {
+    $('btn-export-login').disabled = busy;
+    $('btn-import-login').disabled = busy;
+  }
+
+  function renderImportConfirm(summary) {
+    const box = $('migrate-confirm');
+    box.textContent = '';
+    if (!summary) {
+      box.hidden = true;
+      return;
+    }
+    const lines = summary.services
+      .map((s) => `${escapeHtml(s.name)}：${s.cookies} 条 Cookie、${s.storages} 项本地存储`);
+    box.innerHTML =
+      '<div class="confirm-text">即将导入以下登录信息，同名项会被覆盖：<br>'
+      + lines.join('<br>')
+      + (summary.unmatched && summary.unmatched.length
+        ? `<br>当前应用里没有对应服务、将跳过：${summary.unmatched.map((u) => escapeHtml(u.name)).join('、')}`
+        : '')
+      + '<br>确认后这些标签会自动刷新一次。'
+      + '</div>';
+    const row = document.createElement('div');
+    row.className = 'actions';
+
+    const ok = document.createElement('button');
+    ok.className = 'btn primary';
+    ok.id = 'btn-import-confirm';
+    ok.textContent = '确认导入';
+    ok.addEventListener('click', doImport);
+
+    const cancel = document.createElement('button');
+    cancel.className = 'btn';
+    cancel.textContent = '取消';
+    cancel.addEventListener('click', () => {
+      pendingImport = null;
+      renderImportConfirm(null);
+      migrateNote('已取消导入。', '');
+    });
+
+    row.appendChild(ok);
+    row.appendChild(cancel);
+    box.appendChild(row);
+    box.hidden = false;
+  }
+
+  async function doImport() {
+    if (!pendingImport) return;
+    const { file } = pendingImport;
+    const password = $('migrate-pass').value;
+    pendingImport = null;
+    renderImportConfirm(null);
+    migrateButtons(true);
+    migrateNote('正在导入，导入后会自动刷新对应标签…', '');
+    const res = await window.api.importLogin({ file, password, dryRun: false });
+    migrateButtons(false);
+    if (!res || !res.ok) {
+      // 文件加密但没填密码时保留文件路径，补上密码再点一次即可
+      if (res && res.needsPassword && res.file) pendingImport = { file: res.file };
+      migrateNote((res && res.error) || '导入失败', 'warn');
+      return toast('导入失败', true);
+    }
+    const total = res.services.reduce((sum, s) => sum + s.cookies + s.storages, 0);
+    const failed = res.services.reduce((sum, s) => sum + (s.failed || 0), 0);
+    migrateNote(
+      `导入完成：${res.services.length} 个服务，共恢复 ${total} 项`
+      + (failed ? `，${failed} 条 Cookie 写入被拒绝` : '')
+      + '。若页面仍显示未登录，按 F5 刷新该标签即可。',
+      failed ? 'warn' : 'ok',
+    );
+    toast('登录信息已导入');
+  }
+
+  $('btn-export-login').addEventListener('click', async () => {
+    const password = $('migrate-pass').value;
+    toast('正在导出，请稍候…');
+    migrateButtons(true);
+    const res = await window.api.exportLogin(password);
+    migrateButtons(false);
+    if (!res || !res.ok) {
+      if (res && res.canceled) return;
+      return toast((res && res.error) || '导出失败', true);
+    }
+    // 详情（数量、加密与否）都在这一行里，路径挂 title；
+    // 未加密时才提醒保管——加密过的文件没必要每次都吓唬一遍
+    const name = String(res.file).split(/[\\/]/).pop();
+    migrateNote(
+      `已导出 ${name} · ${res.services} 个服务 · ${res.cookies} 条 Cookie · `
+      + `${res.storages} 项本地存储 · ${prettyBytes(res.bytes)}`
+      + (res.skipped ? ` · 已跳过 ${res.skipped} 项过期/统计数据` : '')
+      + (res.encrypted ? ' · 已加密' : ' · 未加密，等同账号凭证，注意保管'),
+      res.encrypted ? 'ok' : 'warn',
+      res.file,
+    );
+    toast('已导出登录信息');
+  });
+
+  $('btn-import-login').addEventListener('click', async () => {
+    // 已经有待确认的文件时，这个按钮就是「继续」：先校验密码再弹确认
+    const file = pendingImport ? pendingImport.file : '';
+    const password = $('migrate-pass').value;
+    migrateButtons(true);
+    const res = await window.api.importLogin({ file, password, dryRun: true });
+    migrateButtons(false);
+    if (!res || !res.ok) {
+      if (res && res.canceled) return;
+      if (res && res.needsPassword && res.file) pendingImport = { file: res.file };
+      migrateNote((res && res.error) || '导入失败', 'warn');
+      return toast('导入失败', true);
+    }
+    pendingImport = { file: res.file, summary: res };
+    const total = res.services.reduce((sum, s) => sum + s.cookies + s.storages, 0);
+    migrateNote(
+      `已选择文件（导出于 ${(res.exportedAt || '').slice(0, 10) || '未知时间'}），`
+      + `共 ${res.services.length} 个服务、${total} 项登录信息${res.encrypted ? '，文件已加密' : ''}。请确认后导入。`,
+      '',
+    );
+    renderImportConfirm(res);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (overlayOpen) setOverlay(false);
+  });
+
+  // ---------------- 与主进程同步 ----------------
+  window.api.onState((next) => applyState(next));
+
+  window.api.onOpenSettings(() => setOverlay(true));
+
+  window.api.onLayout((next) => renderLayout(next));
+
+  window.api.onTabStatus((patch) => {
+    if (!patch || !patch.id) return;
+    const st = statusOf(patch.id);
+    Object.assign(st, patch);
+    renderAll();
+  });
+
+  window.api.getState().then(async (initial) => {
+    state = initial;
+    appVersion = initial.version;
+    renderAll();
+    renderServiceList();
+    // 更新有可能在页面加载好之前就下完了（比如刷新页面、或者下载特别快），
+    // 那条 state:changed 广播就错过了；首屏这里补判一次，否则提示永远不出现。
+    maybeNotifyUpdate(initial.update);
+    // 首屏 layout 事件可能在页面加载完成前就发过了，这里主动补拉一次几何
+    renderLayout(await window.api.getLayout());
+  });
+
+  // ---------------- 页面空白处右键 ----------------
+  // 标签本身的右键还是「加入 / 移出分屏」（在那个按钮的监听里已 stopPropagation），
+  // 其它地方右键弹的是应用自己的原生菜单（刷新 / 主题 / 设置 / 开发者工具）；
+  // 输入框里的右键不拦，交给主进程给「剪切 / 复制 / 粘贴」。
+  document.addEventListener('contextmenu', (event) => {
+    const el = event.target;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+    event.preventDefault();
+    window.api.openShellMenu({ x: Math.round(event.clientX), y: Math.round(event.clientY) });
+  });
+})();
+</script>
+</body>
+</html>
