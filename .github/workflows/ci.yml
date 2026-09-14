@@ -22,8 +22,13 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
-      - name: 语法检查
+      - name: 语法检查（Electron 入口，保留作回退路径）
         run: npm run lint
+
+      # Tauri 版的前端：api-shim 和 index.html 里那 50K 字符的内联主脚本。
+      # 主脚本语法一错整个外壳白屏，而白屏在 CI 里进程照样起得来，看不出来。
+      - name: 语法检查（Tauri 前端）
+        run: npm run lint:ui
 
       - name: 校验图标素材（图标表 / 深浅变体 / 打包白名单）
         run: npm run check:icons

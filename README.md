@@ -4,7 +4,7 @@
 [![Build](https://github.com/OpenX123/aihub/actions/workflows/build.yml/badge.svg)](https://github.com/OpenX123/aihub/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20·%20macOS%20(Apple%20Silicon)-0078d4.svg)](#0-安装)
-[![Electron](https://img.shields.io/badge/Electron-44-47848f.svg)](https://www.electronjs.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-2-24c8db.svg)](https://tauri.app/)
 
 <img src="assets/brand/logo.png" alt="Aihub" width="420" />
 
@@ -26,6 +26,28 @@
 > 所以各家的登录态、Cookie、缓存天生就是隔开的。
 
 > 开源（MIT）。内置的各家 logo 是各自公司的商标，本项目只用于标识服务入口，见 [NOTICE.md](NOTICE.md)。
+
+---
+
+## ⚠️ v0.3.0 起换成了 Tauri：从旧版升级要重新登录一次
+
+安装包从 **113 MB 降到约 10 MB**，装完占盘从 373 MB 降到 20 MB 左右——
+因为不再把整个 Chromium 打进包里，改用 Windows 自带的 WebView2。
+
+**代价是各站点要重新登录一次。** 旧版的登录态存在 Chromium 的分区格式里，
+新版走 WebView2，两者的 cookie 存储格式不兼容，没有可靠的转换路径。
+
+能继承的：服务列表、分屏布局、主题、快捷键、休眠设置（都在同一个 `config.json` 里）。
+要重做的：每个站点登录一次。
+
+另外两点：
+
+- **macOS 最低要求抬到 14.0**：每站独立登录态在 mac 上依赖 `data_store_identifier`，
+  这个 API 只有 macOS 14+ 才有。13 及以下装上会出现登录态互串，所以直接挡住。
+- **Windows 需要 WebView2 运行时**：Win11 自带，Win10 基本都随 Edge 装过了。
+  极少数精简版 / LTSC 系统上，安装器会自动去微软下载（需要联网，约 1 分钟）。
+
+细节见 [ADR-001](docs/adr/001-electron-to-tauri.md)。
 
 ---
 
@@ -190,8 +212,37 @@ Electron 默认**一个右键菜单都不给**，所以在服务页面里右键�
 
 ## 3. 项目结构
 
+> **两套运行时暂时并存。** `src-tauri/` + `src-ui/` 是**当前在用的 Tauri 版**；
+> 根目录的 `main.js` / `preload.js` / `index.html` 是旧的 Electron 版，留作回退路径。
+> **改功能请改 Tauri 那套**，Electron 那套只做不破坏性的维护。
+> 等 Tauri 版在真实用户那儿跑稳一段时间，Electron 那套会整体删掉。
+>
+> | 要改的东西 | Tauri（现役） | Electron（回退） |
+> |---|---|---|
+> | 主进程逻辑 | `src-tauri/src/*.rs` | `main.js` |
+> | 前后端桥 | `src-ui/api-shim.js` | `preload.js` |
+> | 标签栏 / 设置面板 | `src-ui/index.html` | `index.html` |
+> | 打包配置 | `src-tauri/tauri.conf.json` | `package.json` 的 `build` 段 |
+> | CI | `.github/workflows/build-tauri.yml` | `.github/workflows/build.yml` |
+
 ```
 aihub/
+├── src-tauri/            # 【现役】Tauri 版的 Rust 侧
+│   ├── src/
+│   │   ├── lib.rs        #   应用装配：窗口、托盘、快捷键、布局线程、休眠扫描
+│   │   ├── commands.rs   #   39 个命令，对应原来的 36 个 IPC 通道 + 3 个新功能
+│   │   ├── layout.rs     #   分屏几何（纯函数，11 个单测锁着）
+│   │   ├── config.rs     #   配置读写与 v3→v4 迁移
+│   │   ├── views.rs      #   站点 webview 的建/摆/藏/休眠
+│   │   └── services.rs   #   内置站点列表与版本迁移
+│   ├── tauri.conf.json   #   打包 / 更新源 / NSIS 配置
+│   └── capabilities/     #   权限：只有外壳 webview 能调命令，站点 webview 不能
+├── src-ui/               # 【现役】Tauri 版的前端（纯静态，无构建步骤）
+│   ├── index.html        #   标签栏 + 设置面板（从 Electron 版原样搬来）
+│   └── api-shim.js       #   把 window.api.* 转成 Tauri 的 invoke
+├── docs/adr/             # 架构决策记录（001 = 为什么迁 Tauri、代价是什么）
+│
+├── package.json          # 项目配置 + electron-builder 打包配置（回退用）
 ├── package.json          # 项目配置 + electron-builder 打包配置
 ├── main.js               # 主进程：窗口、各服务视图、session 隔离、快捷键、IPC
 ├── preload.js            # 只向标签栏页面暴露"切换标签/管理服务"，不暴露 Node
@@ -377,6 +428,26 @@ aihub/
 
 ## 5. 打包成安装包
 
+### Tauri 版（现役）
+
+```powershell
+npm run tauri:dev      # 开发模式跑起来（改 Rust 会自动重编）
+npm run tauri:test     # 跑 Rust 单测（41 个）
+npm run tauri:build    # 出安装包 -> src-tauri/target/release/bundle/nsis/
+npm run lint:ui        # 前端三件套：语法 + 内联脚本 + 前后端 IPC 契约
+```
+
+产出 `Aihub_x.y.z_x64-setup.exe`，**约 2 MB**。
+
+第一次 `tauri:build` 要十几分钟（Rust 依赖树全量编译 + LTO），之后有缓存会快很多。
+需要 Rust 工具链和 MSVC Build Tools；`rustup` 装完默认就带。
+
+> **更新签名**：`tauri:build` 时如果环境里没有 `TAURI_SIGNING_PRIVATE_KEY`，
+> 包照样出得来、也装得上，只是不带 `.sig`，自动更新会拒绝它。
+> CI 上这个值从仓库 Secret 取，本地手动打包不用管。
+
+### Electron 版（回退路径）
+
 ```powershell
 npm run icon      # 可选：重新生成应用图标（改了配色/图案时）
 npm run icons     # 重新生成 icons/ 与 icons.js（改了 assets/logos 时）
@@ -516,6 +587,25 @@ npm start
 ---
 
 ## 7. 已知限制（务必先看）
+
+### Tauri 版特有的（v0.3.0 起）
+
+- **从 Electron 版升级要重新登录一次**。两套运行时的 cookie 存储格式不兼容，
+  没有可靠转换路径。服务列表 / 分屏布局 / 主题 / 快捷键 / 休眠设置都能继承，只有登录态要重来。
+- **Windows 需要 WebView2 运行时**。Win11 自带，Win10 基本随 Edge 装过了。
+  极少数精简版 / LTSC 系统上安装器会去微软下载（需要联网，约 1 分钟）。
+  这是包能从 113 MB 缩到 2 MB 的代价——运行时不再由应用携带。
+- **macOS 最低 14.0**。每站独立登录态在 mac 上依赖 `data_store_identifier`，
+  只有 macOS 14+ 才有；13 及以下装上会出现登录态互串，所以直接挡住了。
+- **macOS 上渲染引擎是 WKWebKit 不是 Chromium**。各家站点都是重前端 SPA，
+  渲染差异改不了——那是系统的 webview。Windows 上不存在这个问题（WebView2 就是 Chromium 内核）。
+- **登录态导出 / 导入暂时不可用**。点了会明确报错，不是静默失败。需要按 WebView2 的存储格式重做。
+- **右键菜单暂时是自绘的**，不是系统原生菜单。功能一样，观感略有差别。
+- **分屏依赖 Tauri 的 unstable 特性**。已知上游 bug（tauri#10131 / #11170）会让子 webview
+  在反复缩放 / 最大化还原后位置飘，本项目用「每个窗口事件都重算绝对坐标压回去」绕过了。
+  如果你遇到分屏错位，请开 issue 并说明操作步骤。
+
+### 和运行时无关的
 
 - **不能"一次提问同步发给所有模型"**：这是套壳方案的天然限制。要实现得针对每个网站写注入脚本
   模拟「填输入框 + 点发送」，各家网页改版频繁，维护成本高，本项目不做。
