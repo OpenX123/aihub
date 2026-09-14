@@ -147,7 +147,19 @@ pub fn create_view(
 /// 外壳（标签栏 + 设置面板）。铺满整个窗口，站点视图叠在它上面。
 /// 设置面板打开时站点视图全部移走，外壳就整窗露出来——和 Electron 版同构。
 pub fn create_shell(window: &Window, w: f64, h: f64) -> tauri::Result<Webview<Wry>> {
-    let mut builder = WebviewBuilder::new(SHELL_LABEL, WebviewUrl::App("index.html".into()));
+    let mut builder = WebviewBuilder::new(SHELL_LABEL, WebviewUrl::App("index.html".into()))
+        // **拖拽分屏的命门。**
+        //
+        // Tauri 默认给 webview 装一个原生拖放处理器（用来接收从资源管理器拖进来的
+        // 文件）。它在系统层就把拖放事件吃掉了，页面里的 HTML5 DnD 根本收不到
+        // dragover/drop —— 表现就是拖过去一直显示禁止光标、投放区点不亮。
+        //
+        // Tauri 文档原话：「This is required to use HTML5 drag and drop APIs
+        // on the frontend on Windows.」
+        //
+        // 代价是外壳不再能接收从系统拖进来的文件。这个应用没有那种需求，
+        // 而标签拖拽分屏是核心交互，取舍很明确。
+        .disable_drag_drop_handler();
 
     // 调试构建里把图片加载失败的真实 URL 打出来。
     // 迁移时踩过一次：标签栏 logo 全是破图，光看代码分不清是文件没搬过去
