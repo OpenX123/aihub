@@ -393,7 +393,7 @@ npm run check:icons
 `icons/`、`icons/dark`、`icons/light`、`icons/menu` 都是**生成物**，不要手改；
 `tools/build-icons.js` 和 `tools/build-menu-icons.js` 都支持 `--check`，只校验、绝不写盘。
 
-产物在 `dist\Aihub-0.1.0-setup.exe`，双击即装、装完自动启动，
+产物在 `dist\Aihub-0.2.0-setup.exe`，双击即装、装完自动启动，
 不需要选择安装路径、不需要点下一步（`nsis.oneClick: true`）。
 
 国内网络下 electron-builder 需要额外下载打包工具链，如果卡住可以设置：
