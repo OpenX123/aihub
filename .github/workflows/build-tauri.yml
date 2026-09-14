@@ -141,14 +141,17 @@ jobs:
               --generate-notes
           fi
 
-      - name: 追加安装提示
+      # 说明的顺序很重要：升级提示必须排在自动生成的 commit 列表**前面**。
+      # 「要重新登录一次」这种事，用户得在点下载之前就看见，而不是往下翻三屏才发现。
+      - name: 组装 Release 说明（升级提示前置）
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ -f .github/release-footer.md ]; then
             tag="${GITHUB_REF_NAME}"
-            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body -q .body > /tmp/body.md
-            printf '\n\n' >> /tmp/body.md
-            cat .github/release-footer.md >> /tmp/body.md
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body -q .body > /tmp/generated.md
+            cat .github/release-footer.md > /tmp/body.md
+            printf '\n\n---\n\n' >> /tmp/body.md
+            cat /tmp/generated.md >> /tmp/body.md
             gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file /tmp/body.md
           fi
