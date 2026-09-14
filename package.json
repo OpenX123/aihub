@@ -44,7 +44,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:test": "cd src-tauri && cargo test",
-    "lint:ui": "node --check src-ui/api-shim.js && node tools/check-ui-syntax.js"
+    "lint:ui": "node --check src-ui/api-shim.js && node tools/check-ui-syntax.js && node tools/check-ipc-contract.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
