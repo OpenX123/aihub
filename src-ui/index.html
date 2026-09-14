@@ -137,6 +137,173 @@
      设置面板（#overlay）不受影响，它本来就是整窗浮层。 */
   body.no-tabbar #bar { display: none; }
 
+  /* ======================= 拖拽分屏：投放区 =======================
+     拖标签到页面区域时浮出来。每片对应一个落点，鼠标压上去才高亮。
+     只在 body.dragging-tab 时参与命中测试——平时 pointer-events:none，
+     否则会把点击全部吃掉，站点页面就没法用了。 */
+  #dropzones {
+    position: fixed;
+    left: 0; right: 0;
+    top: var(--bar);
+    bottom: 0;
+    display: none;
+    pointer-events: none;
+    z-index: 60;
+  }
+  body.no-tabbar #dropzones { top: 0; }
+  body.dragging-tab #dropzones { display: block; }
+
+  .dz {
+    position: absolute;
+    pointer-events: auto;
+    border-radius: 10px;
+    /* 默认几乎看不见，只给一层很淡的提示；压上去才明显。
+       只动 opacity / transform，不动 width/height（那会触发布局）。 */
+    opacity: 0;
+    transform: scale(.97);
+    transition: opacity var(--dur-2) var(--ease-out),
+                transform var(--dur-2) var(--ease-out),
+                background-color var(--dur-1) linear;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  body.dragging-tab .dz { opacity: .55; transform: none; }
+  body.dragging-tab .dz.hot {
+    opacity: 1;
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+    border-style: solid;
+    border-color: var(--accent);
+  }
+
+  /* 投放区中间那行字：说明松手会发生什么 */
+  .dz::after {
+    content: attr(data-label);
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg-strong);
+    background: color-mix(in srgb, var(--accent) 88%, black);
+    padding: 5px 12px;
+    border-radius: 999px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity var(--dur-1) var(--ease-out);
+  }
+  .dz.hot::after { opacity: 1; }
+
+  /* 拖拽期间站点视图已经被主进程整体移走了（见 dragstart），
+     底下露出的是外壳自己的背景，不需要再盖遮罩压暗。 */
+
+  /* 每个投放区顶部标出这一栏现在是谁，拖的时候知道自己在替换什么 */
+  .dz .dz-owner {
+    position: absolute;
+    left: 50%;
+    top: 18px;
+    transform: translateX(-50%);
+    font-size: 12px;
+    color: var(--fg-dim);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* ======================= 添加 AI 面板 ======================= */
+  #addpanel {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: grid;
+    place-items: center;
+  }
+  #addpanel[hidden] { display: none; }
+
+  .ap-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, .5);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    transition: opacity var(--dur-2) var(--ease-out);
+  }
+  #addpanel.open .ap-backdrop { opacity: 1; }
+
+  .ap-card {
+    position: relative;
+    width: min(560px, calc(100vw - 48px));
+    max-height: min(560px, calc(100vh - 80px));
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-bg);
+    border: 1px solid var(--bar-border);
+    border-radius: 14px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, .45);
+    /* 从触发点的方向（顶栏加号）微微落下来，不是凭空出现 */
+    opacity: 0;
+    transform: translateY(-8px) scale(.98);
+    transition: opacity var(--dur-3) var(--ease-out),
+                transform var(--dur-3) var(--ease-out);
+  }
+  #addpanel.open .ap-card { opacity: 1; transform: none; }
+  #addpanel.closing .ap-backdrop,
+  #addpanel.closing .ap-card {
+    /* 退出比进入快，手感更跟手 */
+    transition-duration: var(--dur-exit);
+    opacity: 0;
+  }
+  #addpanel.closing .ap-card { transform: translateY(-6px) scale(.985); }
+
+  .ap-card header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--bar-border);
+  }
+  .ap-card header h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    margin-right: auto;
+  }
+  .ap-body { padding: 14px 16px; overflow: auto; }
+  .ap-card footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--bar-border);
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .ap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+  }
+  .ap-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    /* 44px 起步：这是个可点区域，别做太小 */
+    min-height: 44px;
+    border-radius: 10px;
+    border: 1px solid var(--bar-border);
+    background: var(--bg);
+    color: var(--fg);
+    cursor: pointer;
+    text-align: left;
+    font-size: 13px;
+    transition: border-color var(--dur-1) var(--ease-out),
+                transform var(--dur-1) var(--ease-out),
+                background-color var(--dur-1) var(--ease-out);
+  }
+  .ap-item:hover { border-color: var(--accent); background: var(--panel-bg); }
+  .ap-item:active { transform: scale(.97); }
+  .ap-item img { width: 22px; height: 22px; flex: 0 0 auto; border-radius: 5px; }
+  .ap-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ap-empty { color: var(--fg-dim); font-size: 13px; line-height: 1.7; margin: 8px 0 0; }
+
+
   #tabs {
     display: flex;
     align-items: center;
@@ -753,6 +920,10 @@
     #toast, #toast.show { transform: translateX(-50%) !important; transition: opacity var(--dur-2) ease !important; }
     .tab:active, button.btn:active { transform: none !important; }
     .divider:hover::after, .divider.dragging::after { transform: none !important; }
+    /* 新增的投放区和添加面板：位移一律去掉，只保留淡入淡出 */
+    .ap-card, #addpanel.closing .ap-card { transform: none !important; }
+    .ap-item:active { transform: none !important; }
+    .dz, body.dragging-tab .dz { transform: none !important; }
   }
 
   /* 系统要求「减少透明」时：遮罩和面板都变不透明，别透出后面的内容 */
@@ -769,11 +940,33 @@
     <div id="host"></div>
     <div id="tools">
       <button class="icon-btn" id="btn-reload" title="重新加载当前标签（F5 / Ctrl+R，加 Shift 强制刷新）"></button>
-      <button class="icon-btn" id="btn-home" title="回到该服务首页"></button>
-      <button class="icon-btn" id="btn-split" title="左右分屏显示两个服务"></button>
-      <button class="icon-btn" id="btn-add" title="添加服务（＋）"></button>
+      <button class="icon-btn" id="btn-add" title="添加 AI 到标签栏"></button>
       <button class="icon-btn" id="btn-settings" title="设置（Ctrl+,）"></button>
     </div>
+  </div>
+
+  <!-- 拖标签到页面区域时浮出来的投放区。
+       每一片对应一个落点：替换某栏 / 在某栏左右插入新栏。
+       只在拖拽期间 display，平时完全不参与命中测试。 -->
+  <div id="dropzones" aria-hidden="true"></div>
+
+  <!-- 「添加 AI」面板：只列还没加到标签栏上的站点。
+       和设置面板分开——那边是管理已有服务，这边是纯粹的「加一个进来」。 -->
+  <div id="addpanel" hidden>
+    <div class="ap-backdrop"></div>
+    <section class="ap-card" role="dialog" aria-modal="true" aria-label="添加 AI">
+      <header>
+        <h2>添加 AI</h2>
+        <button class="icon-btn" id="ap-close" title="关闭（Esc）" aria-label="关闭"></button>
+      </header>
+      <div class="ap-body">
+        <div class="ap-grid" id="ap-grid"></div>
+        <p class="ap-empty" id="ap-empty" hidden>所有内置站点都已经在标签栏上了。<br />想加别家？到设置里填名字和网址。</p>
+      </div>
+      <footer>
+        <button class="btn ghost" id="ap-custom">添加自定义网站…</button>
+      </footer>
+    </section>
   </div>
 
   <div id="stage">
@@ -981,7 +1174,21 @@
   const status = new Map();   // id -> { loading, error, favicon, url, title }
   const confirming = new Set(); // 待确认删除的服务 id
   let appVersion = '';
-  let overlayOpen = false;
+  let overlayOpen = false;   // 设置面板开着
+  let addPanelOpen = false;  // 添加 AI 面板开着
+  let dragYielding = false;  // 拖拽中，站点视图临时让开
+
+  // 站点视图是原生层，盖在外壳页面之上。设置面板和拖拽分屏都需要它「让开」，
+  // 但它们是两个独立的开关——谁都不能直接发 IPC，不然后调的会覆盖先调的，
+  // 出现「设置面板还开着，视图却被放回来盖住它」这种事。
+  // 统一在这里按「有任何一方要求让位」来算，只在结果真的变了时才发 IPC。
+  let viewsYielded = false;
+  function syncViewYield() {
+    const want = overlayOpen || addPanelOpen || dragYielding;
+    if (want === viewsYielded) return;
+    viewsYielded = want;
+    window.api.setOverlay(want);
+  }
 
   // ---------------- 小工具 ----------------
   let toastTimer = null;
@@ -1177,6 +1384,7 @@
   // 用原生 HTML5 拖放而不是 pointer 事件：标签栏本身是 -webkit-app-region: drag 的窗口拖动区，
   // 自己用 pointermove 模拟会和「拖动窗口」打架；draggable 元素的拖拽优先级更高，不会误拖窗口。
   let tabDrag = null; // { id }
+  let dragBailout = 0; // dragend 没来时的兜底定时器
 
   function clearDropMarks() {
     for (const node of tabNodes.values()) {
@@ -1193,6 +1401,27 @@
         // Firefox/Chromium 都要求 dragstart 里写点东西，否则后续 drag 事件不触发
         event.dataTransfer.setData('text/plain', id);
       } catch (err) { /* 忽略：拿不到 dataTransfer 也不影响自家的拖拽状态 */ }
+      // 进入拖拽模式。
+      //
+      // 关键：站点 webview 是**原生层，永远盖在外壳页面之上**，鼠标移到页面区域时
+      // 事件落在站点上，外壳这边根本收不到 dragover——投放区就成了摆设。
+      // 所以先让主进程把站点视图整体移走（和打开设置面板是同一套机制），
+      // 外壳整窗露出来，投放区才真的能接到拖拽。
+      document.body.classList.add('dragging-tab');
+      dragYielding = true;
+      syncViewYield();
+      buildDropZones();
+      // 兜底：万一 dragend 因为任何原因没来（浏览器怪癖、拖拽被系统打断），
+      // 让位状态会永久卡住——站点视图一直不回来，整个应用看起来就是坏的。
+      // 这比漏掉一次收尾严重得多，所以宁可多设一道定时器。
+      clearTimeout(dragBailout);
+      dragBailout = setTimeout(() => {
+        if (document.body.classList.contains('dragging-tab')) {
+          clearDropMarks();
+          endDropMode();
+          tabDrag = null;
+        }
+      }, 20000);
     });
 
     btn.addEventListener('dragover', (event) => {
@@ -1221,13 +1450,178 @@
       await moveTab(dragged, id, after);
     });
 
-    // dragend 一定会触发（包括拖到窗口外松手），收尾放这里才不会留下半透明的标签
+    // 这里只收拾这个按钮自己的样式。
+    // 真正的收尾（退出拖拽模式、把站点视图放回来）挂在 document 上——
+    // drop 之后状态广播会让 renderTabs 重建标签节点，这个 btn 可能已经不在
+    // DOM 里了，绑在它身上的 dragend 就永远不会来。
     btn.addEventListener('dragend', () => {
       btn.classList.remove('dragging');
-      clearDropMarks();
-      tabDrag = null;
     });
   }
+
+  // ================== 拖拽分屏 ==================
+  // 把标签拖到页面区域松手就分栏。落点分两类：
+  //   replace  —— 压在某一栏中间：换成拖过来的这个服务
+  //   insert   —— 压在某一栏的左/右边缘：在那儿插入一栏（栏数 +1）
+  // 边缘判定用 28% 宽度，中间留 44% 给 replace，不会误触。
+
+  const dropLayer = $('dropzones');
+  let dropTargets = [];   // [{ el, kind, index, id }]
+  let hotZone = null;
+
+  const EDGE_RATIO = 0.28; // 左右各 28% 算「插入新栏」
+
+  /** 拖拽开始时按当前几何铺一遍投放区 */
+  function buildDropZones() {
+    dropLayer.innerHTML = '';
+    dropTargets = [];
+    hotZone = null;
+
+    const panes = geometry.panes || [];
+    if (!panes.length) return;
+
+    const full = state.panes.length >= (state.maxPanes || 4);
+    const barTop = geometry.top || 0;
+
+    panes.forEach((pane, i) => {
+      const w = pane.width;
+      const edge = full ? 0 : Math.min(w * EDGE_RATIO, 160);
+
+      // 左边缘：在这一栏前面插一栏（第一栏才给，避免和上一栏的右边缘重叠）
+      if (edge > 0 && i === 0) {
+        addZone(pane.x, edge, 'insert', i, '新增一栏');
+      }
+      // 中间：替换这一栏
+      addZone(pane.x + edge, Math.max(0, w - edge * 2), 'replace', i,
+              full ? '替换这一栏' : '替换这一栏');
+      // 右边缘：在这一栏后面插一栏
+      if (edge > 0) {
+        addZone(pane.x + w - edge, edge, 'insert', i + 1, '新增一栏');
+      }
+    });
+
+    function addZone(x, width, kind, index, label) {
+      if (width <= 8) return;
+      const el = document.createElement('div');
+      el.className = 'dz';
+      el.dataset.label = label;
+      if (kind === 'replace') {
+        const svc = state.services.find((x) => x.id === (state.panes[index] || ''));
+        if (svc) {
+          const owner = document.createElement('div');
+          owner.className = 'dz-owner';
+          owner.textContent = '当前：' + svc.name;
+          el.appendChild(owner);
+        }
+      }
+      el.style.left = x + 'px';
+      el.style.width = width + 'px';
+      el.style.top = '6px';
+      el.style.height = 'calc(100% - 12px)';
+      dropLayer.appendChild(el);
+      dropTargets.push({ el, kind, index });
+    }
+    void barTop; // 顶部偏移由 CSS 的 #dropzones{top} 负责，这里只排水平方向
+  }
+
+  /** 拖拽过程中根据鼠标位置点亮对应的投放区 */
+  function updateHotZone(clientX, clientY) {
+    const top = (geometry.top || 0);
+    if (clientY < top) { setHot(null); return false; }
+    const hit = dropTargets.find(({ el }) => {
+      const r = el.getBoundingClientRect();
+      return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+    });
+    setHot(hit || null);
+    return Boolean(hit);
+  }
+
+  function setHot(zone) {
+    if (hotZone === zone) return;
+    if (hotZone) hotZone.el.classList.remove('hot');
+    hotZone = zone;
+    if (hotZone) hotZone.el.classList.add('hot');
+  }
+
+  function endDropMode() {
+    clearTimeout(dragBailout);
+    document.body.classList.remove('dragging-tab');
+    setHot(null);
+    dropLayer.innerHTML = '';
+    dropTargets = [];
+    // 站点视图放回来。设置面板要是开着，仲裁函数会让它继续保持让位。
+    dragYielding = false;
+    syncViewYield();
+  }
+
+  /** 在页面区域松手：按落点改布局 */
+  async function applyDrop(dragId) {
+    if (!hotZone) return false;
+    const { kind, index } = hotZone;
+    const panes = state.panes.slice();
+
+    const dup = panes.indexOf(dragId); // 这个服务是不是已经占着某一栏
+
+    if (kind === 'replace') {
+      if (panes[index] === dragId) return true; // 原地放回，什么都不用做
+      // 先写目标栏再摘掉原来那栏：顺序反过来的话 index 会因为 splice 而错位
+      panes[index] = dragId;
+      if (dup >= 0 && dup !== index) panes.splice(dup, 1);
+    } else {
+      // 新增一栏。先判上限再动数组——改完再报错会留下一个已经被改坏的
+      // panes（虽然没提交，但后面任何基于它的判断都是错的）。
+      // dup >= 0 时是「把已有的那栏挪个位置」，栏数不变，不占新名额。
+      if (dup < 0 && panes.length >= (state.maxPanes || 4)) {
+        toast('最多同时显示 ' + (state.maxPanes || 4) + ' 栏', true);
+        return false;
+      }
+      if (dup >= 0) panes.splice(dup, 1);
+      // 摘掉原栏之后，落点在它右边的话索引要往左挪一格
+      const at = Math.max(0, Math.min(panes.length, dup >= 0 && dup < index ? index - 1 : index));
+      panes.splice(at, 0, dragId);
+    }
+
+    const res = await window.api.setPanes(panes);
+    if (!res || !res.ok) {
+      toast((res && res.error) || '分屏失败', true);
+      return false;
+    }
+    return true;
+  }
+
+  // 投放区的 dragover / drop 挂在容器上（事件委托）：
+  // 子元素是拖拽开始时才建的，一个个绑代价大，而且要反复解绑。
+  dropLayer.addEventListener('dragover', (event) => {
+    if (!tabDrag) return;
+    // preventDefault 是 HTML5 DnD 允许放置的开关，不调就收不到 drop
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    updateHotZone(event.clientX, event.clientY);
+  });
+
+  // 拖拽收尾的唯一出口。挂在 document 上（捕获阶段）而不是标签按钮上：
+  // 标签节点会被 renderTabs 重建，绑在旧节点上的 dragend 收不到。
+  // 拖到窗口外松手、按 Esc 取消，浏览器同样会派发 dragend，这里都能兜住。
+  document.addEventListener('dragend', () => {
+    if (!tabDrag && !document.body.classList.contains('dragging-tab')) return;
+    clearDropMarks();
+    endDropMode();
+    tabDrag = null;
+  }, true);
+
+  dropLayer.addEventListener('drop', async (event) => {
+    if (!tabDrag) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const dragId = tabDrag.id;
+    const ok = await applyDrop(dragId);
+    endDropMode();
+    tabDrag = null;
+    if (ok) {
+      // 落定之后把焦点给拖过去的那个，符合「我刚把它放这儿」的预期
+      window.api.focusPane(dragId);
+    }
+  });
 
   async function moveTab(dragId, targetId, after) {
     // 只排「顶栏上看得见的」，主进程会把收起来的服务按原相对位置塞回去
@@ -1329,27 +1723,8 @@
 
   function renderTools() {
     const active = state.services.find((s) => s.id === state.activeId);
-    const splitBtn = $('btn-split');
-    const multi = state.panes.length > 1;
-    splitBtn.classList.toggle('on', multi);
-    // 图标和角标都就地更新：反复 innerHTML = 反复重建 + 重放动画
-    let badge = splitBtn.querySelector('.badge');
-    if (multi) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'badge';
-        splitBtn.appendChild(badge);
-      }
-      const text = String(state.panes.length);
-      if (badge.textContent !== text) badge.textContent = text;
-    } else if (badge) {
-      badge.remove();
-    }
-    const tip = multi
-      ? `分屏中：${state.panes.length} 栏（点击管理）`
-      : '左右分屏显示多个服务（可拖动分隔条调宽度）';
-    if (splitBtn.title !== tip) splitBtn.title = tip;
-
+    // 分屏按钮已经去掉了：分屏统一用「把标签拖到页面区域」完成，
+    // 拖的时候会浮出投放区提示放哪儿，比翻菜单直观。
     const st = active ? statusOf(active.id) : null;
     hostEl.textContent = st && st.url ? hostOf(st.url) : '';
     if (!active) {
@@ -1526,10 +1901,8 @@
    * 浮在所有服务页面之上，所以既不会被视图挡住，也不用让布局腾地方。
    * 这里只负责把按钮的位置报过去，菜单项和勾选状态由主进程按 config 生成。
    */
-  function openSplitMenu() {
-    const rect = $('btn-split').getBoundingClientRect();
-    window.api.openSplitMenu({ x: Math.round(rect.left), y: Math.round(rect.bottom + 4) });
-  }
+  // 原来这里有个 openSplitMenu()：点工具栏的分屏按钮弹原生菜单勾选栏。
+  // 按钮和菜单都去掉了——分屏改成拖标签到页面区域，不需要中间这一层。
 
   // ---------------- 设置面板 ----------------
   // 进出都用同一套「淡入 + 轻微上移」的路径（进出同路，空间上才连贯）。
@@ -1552,7 +1925,7 @@
       overlay.classList.remove('closing');
       // 下一帧再加 open，保证过渡真的跑起来（同一帧内改两次类名会被合并）
       requestAnimationFrame(() => overlay.classList.add('open'));
-      window.api.setOverlay(true);
+      syncViewYield();
       confirming.clear();
       renderServiceList({ stagger: true });
       // 面板可见后才知道按钮多宽，这时候再摆主题滑块
@@ -1566,7 +1939,7 @@
       if (overlayOpen) return;              // 中途又被打开了，就别收
       overlay.hidden = true;
       overlay.classList.remove('closing');
-      window.api.setOverlay(false);
+      syncViewYield();
     };
     const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     overlayCloseTimer = setTimeout(finish, reduced ? 190 : 150);
@@ -1725,23 +2098,115 @@
       '数据目录：<code>' + escapeHtml(state.userData || '%APPDATA%\\Aihub') + '</code>（卸载后不会被删除）。';
   }
 
+  // ---------------- 添加 AI 面板 ----------------
+  // 和设置面板分工：这里只做「把一个还没加的 AI 放进标签栏」，
+  // 设置面板管的是已有服务的增删改和各种偏好，两边不重合。
+  let apCloseTimer = null;
+
+  async function openAddPanel() {
+    const panel = $('addpanel');
+    clearTimeout(apCloseTimer);
+    panel.classList.remove('closing');
+    panel.hidden = false;
+    // 面板是页面元素，而站点视图是原生层永远盖在页面上方，
+    // 所以要先让视图让开，否则面板会被站点页面挡住。
+    // 复用 overlayOpen 这个开关：对「要不要让位」来说，添加面板和设置面板是一回事。
+    addPanelOpen = true;
+    syncViewYield();
+    // 强制回流一次，让 .open 的过渡真的能播（否则和 hidden=false 同帧，浏览器会跳过）
+    void panel.offsetWidth;
+    panel.classList.add('open');
+
+    const grid = $('ap-grid');
+    const empty = $('ap-empty');
+    grid.innerHTML = '';
+    let list = [];
+    try {
+      list = await window.api.availableServices();
+    } catch (err) {
+      toast('读取可添加列表失败：' + err, true);
+    }
+    empty.hidden = list.length > 0;
+
+    list.forEach((svc, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'ap-item';
+      btn.type = 'button';
+
+      const iconPath = iconPathFor(svc.icon) || '';
+      if (iconPath) {
+        const img = document.createElement('img');
+        img.src = iconPath;
+        img.alt = '';
+        btn.appendChild(img);
+      }
+      const label = document.createElement('span');
+      label.textContent = svc.name;
+      btn.appendChild(label);
+      btn.setAttribute('aria-label', '添加 ' + svc.name);
+
+      // 入场错开 30ms 一个：一起冒出来会糊成一团
+      btn.style.opacity = '0';
+      btn.style.transform = 'translateY(6px)';
+      requestAnimationFrame(() => {
+        btn.style.transition = 'opacity var(--dur-2) var(--ease-out) ' + (i * 30) + 'ms, '
+                             + 'transform var(--dur-2) var(--ease-out) ' + (i * 30) + 'ms';
+        btn.style.opacity = '';
+        btn.style.transform = '';
+      });
+
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        const res = await window.api.addBuiltin(svc.id);
+        if (!res || !res.ok) {
+          btn.disabled = false;
+          return toast((res && res.error) || '添加失败', true);
+        }
+        toast('已添加「' + svc.name + '」到标签栏');
+        closeAddPanel();
+      });
+      grid.appendChild(btn);
+    });
+  }
+
+  function closeAddPanel() {
+    const panel = $('addpanel');
+    if (panel.hidden) return;
+    panel.classList.remove('open');
+    panel.classList.add('closing');
+    clearTimeout(apCloseTimer);
+    // 等淡出播完再把站点视图放回来，否则视图会「啪」地盖住正在消失的面板
+    apCloseTimer = setTimeout(() => {
+      panel.hidden = true;
+      panel.classList.remove('closing');
+      addPanelOpen = false;
+      syncViewYield();
+    }, 160);
+  }
+
   // ---------------- 事件绑定 ----------------
   $('btn-reload').innerHTML = svg('reload');
-  $('btn-home').innerHTML = svg('home');
-  $('btn-split').innerHTML = svg('split');
   $('btn-add').innerHTML = svg('plus');
   $('btn-settings').innerHTML = svg('settings');
   $('btn-close').innerHTML = svg('close');
+  $('ap-close').innerHTML = svg('close');
 
   $('btn-reload').addEventListener('click', () => window.api.reload(null));
-  $('btn-home').addEventListener('click', () => window.api.home(null));
   $('btn-settings').addEventListener('click', () => setOverlay(true));
   $('btn-close').addEventListener('click', () => setOverlay(false));
-  $('btn-add').addEventListener('click', () => {
-    setOverlay(true);
-    setTimeout(() => $('add-name').focus(), 30);
+  // 加号 = 往标签栏里加一个 AI，和设置面板（管理已有服务）分开
+  $('btn-add').addEventListener('click', () => openAddPanel());
+  $('ap-close').addEventListener('click', () => closeAddPanel());
+  $('addpanel').addEventListener('click', (event) => {
+    // 点背景关闭；点卡片内部不关
+    if (event.target.classList.contains('ap-backdrop')) closeAddPanel();
   });
-  $('btn-split').addEventListener('click', () => openSplitMenu());
+  $('ap-custom').addEventListener('click', () => {
+    // 自定义网站还是走设置面板那套表单，不重复造一个
+    closeAddPanel();
+    setOverlay(true);
+    setTimeout(() => $('add-name').focus(), 220);
+  });
 
   $('btn-add-confirm').addEventListener('click', async () => {
     const name = $('add-name').value;
@@ -2293,6 +2758,8 @@
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
+    // 添加面板盖在设置面板之上，先关它
+    if (!$('addpanel').hidden) return closeAddPanel();
     if (overlayOpen) setOverlay(false);
   });
 

@@ -706,6 +706,60 @@ fn wait_for_webviews_to_exit(timeout: std::time::Duration) {
     std::thread::sleep(timeout.min(std::time::Duration::from_millis(500)));
 }
 
+/// 内置站点目录里，当前还没加到标签栏上的那些。
+///
+/// 「添加 AI」面板用它填列表。判重按 id：用户自己删掉过的内置站点
+/// 会重新出现在这里，这是对的——删了之后应该能再加回来。
+#[tauri::command]
+pub fn services_available(app: AppHandle) -> Vec<Service> {
+    let config = app.state::<AppState>().snapshot();
+    crate::services::default_services()
+        .into_iter()
+        .filter(|def| !config.services.iter().any(|s| s.id == def.id))
+        .collect()
+}
+
+/// 把内置目录里的某个站点加到标签栏上。
+#[tauri::command]
+pub fn services_add_builtin(app: AppHandle, id: String) -> CmdResult<serde_json::Value> {
+    let Some(def) = crate::services::default_services().into_iter().find(|s| s.id == id) else {
+        return Err("这不是一个内置站点".into());
+    };
+    mutate(&app, move |cfg| {
+        if let Some(existing) = cfg.services.iter_mut().find(|s| s.id == def.id) {
+            // 之前被「从标签栏收起」了，放回来即可，别建第二份（登录态还在）
+            existing.hidden = false;
+        } else {
+            cfg.services.push(def.clone());
+        }
+        Ok(serde_json::json!({ "ok": true, "id": def.id }))
+    })
+}
+
+/// 调试用：在外壳 webview 里执行一段 JS。
+///
+/// 只在 debug 构建里存在。用来在真机上驱动前端逻辑做验证——
+/// 合成鼠标事件（mouse_event）触发不了 Chromium 的 HTML5 拖放，
+/// 靠模拟输入没法自动化测拖拽分屏，只能这样直接调函数。
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub fn debug_eval(app: AppHandle, js: String) -> CmdResult<String> {
+    use std::sync::mpsc::channel;
+
+    let window = app.get_window(MAIN_WINDOW).ok_or("没有主窗口")?;
+    let shell = window
+        .get_webview(views::SHELL_LABEL)
+        .ok_or("没有外壳 webview")?;
+
+    let (tx, rx) = channel();
+    shell
+        .eval_with_callback(js, move |res| { let _ = tx.send(res); })
+        .map_err(|e| e.to_string())?;
+    // 留足时间给异步脚本跑完（拖拽测试里有 await）
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .map_err(|_| "脚本没有在 10 秒内回传结果".to_string())
+}
+
 #[tauri::command]
 pub fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
@@ -745,6 +799,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         services_add, services_update, services_remove, services_set_hidden, services_reorder,
         config_set_preload, config_get_preload, config_set_hibernate,
         config_set_theme, config_set_hotkey, config_get_hotkey,
+        services_available, services_add_builtin,
+        #[cfg(debug_assertions)]
+        debug_eval,
         window_set_always_on_top, window_set_tab_bar,
         window_summon, window_hide, ui_overlay,
         update_check, update_install,

@@ -433,6 +433,23 @@ pub fn run() {
 
             // 后台标签休眠的扫描线程
             spawn_hibernate_thread(handle.clone());
+
+            // 自检：AIHUB_SELFTEST=<脚本路径> 时，等外壳就绪后在里面跑一遍那个脚本，
+            // 把结果打到 stderr。用来自动化验证拖拽分屏这类「合成鼠标事件做不到」的交互。
+            #[cfg(debug_assertions)]
+            if let Ok(path) = std::env::var("AIHUB_SELFTEST") {
+                let h = handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(6));
+                    match std::fs::read_to_string(&path) {
+                        Ok(js) => match commands::debug_eval(h, js) {
+                            Ok(out) => println!("[selftest] {out}"),
+                            Err(err) => println!("[selftest] 失败: {err}"),
+                        },
+                        Err(err) => println!("[selftest] 读不到脚本 {path}: {err}"),
+                    }
+                });
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

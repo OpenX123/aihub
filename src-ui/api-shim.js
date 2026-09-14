@@ -115,6 +115,11 @@
     /** 功能 2：标签栏显示 / 收起。收起后站点视图铺满整窗。 */
     setTabBar: (visible) => invoke('window_set_tab_bar', { visible: Boolean(visible) }),
 
+    /** 内置目录里还没加到标签栏上的站点（「添加 AI」面板用） */
+    availableServices: () => invoke('services_available'),
+    /** 把内置站点加到标签栏上 */
+    addBuiltin: (id) => invoke('services_add_builtin', { id }),
+
     /** 功能 3：设置里显示版本号 */
     getVersion: () => invoke('app_version'),
     /** 功能 3：更新进度（downloading / closing） */
