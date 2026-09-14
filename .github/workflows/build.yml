@@ -2,10 +2,13 @@ name: Build
 
 # 自动打包：Windows x64（NSIS 安装包）+ macOS arm64（dmg / zip，Apple Silicon）。
 # 推 main 和提 PR 时只出产物（Artifacts），推 v* 标签时额外发一个 Release。
+# 注意：这里**刻意不监听 v* 标签**。
+# 发版由 build-tauri.yml 负责；两个工作流都监听标签的话，谁先跑完谁的产物先上 Release，
+# v0.3.0 就是这么被传上去一个 113 MB 的 Electron 包的（本该是 2 MB 的 Tauri 包）。
+# 这套留作回退路径，只在推 main / 提 PR / 手动触发时出 Artifacts，不碰 Release。
 on:
   push:
     branches: [main, master]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -92,50 +95,6 @@ jobs:
           retention-days: 30
 
   # 只有推 v* 标签才走的发布任务：把上面两个 job 的产物挂到 Release 上
-  release:
-    name: 发布 Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows-x64, macos-arm64]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v7
-        with:
-          path: artifacts
-
-      - name: 汇总产物
-        run: |
-          mkdir -p release
-          # 注意只收 latest.yml（Windows）。mac 包没签名，Squirrel.Mac 必定校验失败，
-          # 放个 latest-mac.yml 出去等于给 mac 用户一个永远装不上的更新源。
-          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' \
-            -o -name '*.zip' -o -name 'latest.yml' -o -name '*.blockmap' \
-            \) -exec cp {} release/ \;
-          ls -lh release
-
-      - name: 创建或更新 Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="${GITHUB_REF_NAME}"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$tag" release/* --repo "$GITHUB_REPOSITORY" --clobber
-          else
-            gh release create "$tag" release/* \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Aihub $tag" \
-              --generate-notes
-          fi
-
-      # 系统提示（Windows SmartScreen / macOS Gatekeeper）得写在下载页上，
-      # 否则第一次用的人会以为下到了一个坏包。追加在自动生成的更新说明后面。
-      - name: 追加安装说明
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="${GITHUB_REF_NAME}"
-          {
-            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body -q .body
-            echo
-            cat .github/release-footer.md
-          } > notes.md
-          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+  # 原来这里有个 release job（推 v* 标签时建 Release）。已经删掉：
+  # 发版统一由 build-tauri.yml 负责，两套都建 Release 会互相覆盖产物。
+  # 这个工作流现在只出 Artifacts，作为 Electron 版的回退构建路径。

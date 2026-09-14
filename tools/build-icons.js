@@ -67,7 +67,12 @@ const CHECK_ONLY = process.argv.includes('--check');
 if (!CHECK_ONLY) {
   fs.mkdirSync(outDir, { recursive: true });
   // 清掉旧文件，避免改名后留下垃圾（注意：--check 绝不能走到这里，否则会把图标全删掉）
+  //
+  // menu/ 要留着：那 232 个托盘/菜单图标是 build-menu-icons.js 出的，
+  // 而那个脚本必须在 Electron 里跑。在这里连它一起删，等于让每次 npm run icons
+  // 都悄悄毁掉一批不属于自己的产物——踩过一次了。
   for (const name of fs.readdirSync(outDir)) {
+    if (name === 'menu') continue;
     fs.rmSync(path.join(outDir, name), { recursive: true, force: true });
   }
 }
@@ -244,12 +249,51 @@ if (CHECK_ONLY) {
   if (missing.length) console.log(`  ✗ 缺文件 ${missing.length} 个：${missing.slice(0, 6).join(' ')}`);
   if (stale) console.log('  ✗ icons.js 与 manifest 不一致（重新跑 npm run icons）');
   if (leaked.length) console.log(`  ✗ 有 ${leaked.length} 个文件混进了 icons/ 顶层`);
-  if (!missing.length && !stale && !leaked.length) console.log('  ✓ icons/ 与 icons.js 都是最新的');
-  process.exit(missing.length || stale || leaked.length ? 1 : 0);
+
+  // Tauri 前端目录也得有一份，否则标签栏上全是破图。
+  // 这条是补上一次真实事故：迁移时只搬了 html/js，忘了 icons/ 和 build/icon.png。
+  const uiDir = path.join(root, 'src-ui');
+  const uiMissing = fs.existsSync(uiDir)
+    ? expected
+        .filter((rel) => !fs.existsSync(path.join(uiDir, rel)))
+        .concat(fs.existsSync(path.join(uiDir, 'build', 'icon.png')) ? [] : ['build/icon.png'])
+    : [];
+  if (uiMissing.length) {
+    console.log(`  ✗ src-ui/ 里缺 ${uiMissing.length} 个：${uiMissing.slice(0, 6).join(' ')}（跑 npm run icons 同步）`);
+  }
+
+  if (!missing.length && !stale && !leaked.length && !uiMissing.length) {
+    console.log('  ✓ icons/、icons.js、src-ui/ 都是最新的');
+  }
+  process.exit(missing.length || stale || leaked.length || uiMissing.length ? 1 : 0);
 }
 
 fs.writeFileSync(path.join(root, 'icons.js'), body, 'utf8');
 
+// Tauri 版的前端根目录是 src-ui/，图标按相对路径 icons/xxx.svg 加载，
+// 所以生成完要同步一份过去——不然标签栏上全是破图占位符。
+// （Electron 版从仓库根加载，用的是根目录那份，两边都得有。）
+syncToFrontend();
+
 console.log('图标文件:', copied, '个 ->', path.relative(root, outDir));
 console.log('主题变体: 深色', stats.dark, '个 / 浅色', stats.light, '个 / 无需变体', stats.skipped, '个');
 console.log('icons.js:', (body.length / 1024).toFixed(1), 'KB，域名映射', Object.keys(HOSTS).length, '条');
+
+/** 把 icons/ 和 icons.js 同步到 Tauri 前端目录 src-ui/ */
+function syncToFrontend() {
+  const uiDir = path.join(root, 'src-ui');
+  if (!fs.existsSync(uiDir)) return; // 没有 Tauri 那套就算了
+
+  const uiIcons = path.join(uiDir, 'icons');
+  fs.rmSync(uiIcons, { recursive: true, force: true });
+  fs.cpSync(outDir, uiIcons, { recursive: true });
+  fs.copyFileSync(path.join(root, 'icons.js'), path.join(uiDir, 'icons.js'));
+
+  // 设置面板头部的品牌图标走 build/icon.png
+  const brand = path.join(root, 'build', 'icon.png');
+  if (fs.existsSync(brand)) {
+    fs.mkdirSync(path.join(uiDir, 'build'), { recursive: true });
+    fs.copyFileSync(brand, path.join(uiDir, 'build', 'icon.png'));
+  }
+  console.log('已同步到 src-ui/（Tauri 前端根目录）');
+}

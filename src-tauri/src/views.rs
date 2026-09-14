@@ -147,11 +147,23 @@ pub fn create_view(
 /// 外壳（标签栏 + 设置面板）。铺满整个窗口，站点视图叠在它上面。
 /// 设置面板打开时站点视图全部移走，外壳就整窗露出来——和 Electron 版同构。
 pub fn create_shell(window: &Window, w: f64, h: f64) -> tauri::Result<Webview<Wry>> {
-    window.add_child(
-        WebviewBuilder::new(SHELL_LABEL, WebviewUrl::App("index.html".into())),
-        LogicalPosition::new(0.0, 0.0),
-        LogicalSize::new(w, h),
-    )
+    let mut builder = WebviewBuilder::new(SHELL_LABEL, WebviewUrl::App("index.html".into()));
+
+    // 调试构建里把图片加载失败的真实 URL 打出来。
+    // 迁移时踩过一次：标签栏 logo 全是破图，光看代码分不清是文件没搬过去
+    // 还是 CSP 挡了，必须看到浏览器实际请求的那个地址。
+    #[cfg(debug_assertions)]
+    {
+        builder = builder.initialization_script(
+            r#"window.addEventListener('error', (e) => {
+                 if (e.target && e.target.tagName === 'IMG') {
+                   console.error('[img-fail]', e.target.src);
+                 }
+               }, true);"#,
+        );
+    }
+
+    window.add_child(builder, LogicalPosition::new(0.0, 0.0), LogicalSize::new(w, h))
 }
 
 /// 一次布局要对窗口做的事。
