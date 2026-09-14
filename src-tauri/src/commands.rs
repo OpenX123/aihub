@@ -260,6 +260,92 @@ pub fn layout_single(app: AppHandle, id: String) {
     });
 }
 
+/// 交换两个格子里的服务（拖一个格子到另一个格子上）。
+///
+/// 只换内容不动布局：格子的位置和大小都不变，就是里面的服务对调。
+/// 这是田字格里最常用的操作——「我想让这两个换个位置」。
+#[tauri::command]
+pub fn layout_swap(app: AppHandle, a: usize, b: usize) -> CmdResult<serde_json::Value> {
+    mutate(&app, move |cfg| {
+        let n = cfg.panes.len();
+        if a >= n || b >= n {
+            return Err("格子编号超出范围".to_string());
+        }
+        if a == b {
+            return Ok(serde_json::json!({ "ok": true }));
+        }
+        cfg.panes.swap(a, b);
+        // 权重跟着一起换，否则两栏宽度会对调，看起来像是布局炸了
+        if cfg.weights.len() == n {
+            cfg.weights.swap(a, b);
+        }
+        Ok(serde_json::json!({ "ok": true }))
+    })
+}
+
+/// 把某个服务放进指定格子。
+///
+/// index 等于当前栏数时表示「追加一个新格子」，小于栏数则是替换那一格。
+/// 拖拽分屏统一走这一个命令，前端不用自己算 panes 数组怎么拼。
+#[tauri::command]
+pub fn layout_place(app: AppHandle, id: String, index: usize) -> CmdResult<serde_json::Value> {
+    mutate(&app, move |cfg| {
+        if cfg.get_service(&id).is_none() {
+            return Err("找不到这个服务".to_string());
+        }
+        let n = cfg.panes.len();
+        let dup = cfg.panes.iter().position(|p| p == &id);
+
+        if index < n {
+            // 放进已有格子
+            if dup == Some(index) {
+                return Ok(serde_json::json!({ "ok": true })); // 原地放回
+            }
+            match dup {
+                // 已经在别的格子里 = 两格互换，而不是让它占两格
+                Some(from) => cfg.panes.swap(from, index),
+                None => cfg.panes[index] = id.clone(),
+            }
+        } else {
+            // 追加新格子
+            if dup.is_none() && n >= MAX_PANES {
+                return Err(format!("最多同时显示 {MAX_PANES} 栏"));
+            }
+            if let Some(from) = dup {
+                // 已经在屏幕上了，挪到最后一格而不是新增
+                let svc = cfg.panes.remove(from);
+                cfg.panes.push(svc);
+            } else {
+                cfg.panes.push(id.clone());
+            }
+            let count = cfg.panes.len();
+            cfg.weights = layout::normalize_weights(None, count);
+        }
+        cfg.active_id = id.clone();
+        Ok(serde_json::json!({ "ok": true, "panes": cfg.panes.clone() }))
+    })
+}
+
+/// 把某个格子从布局里移除（缩回更少的栏数）。
+#[tauri::command]
+pub fn layout_remove_pane(app: AppHandle, index: usize) -> CmdResult<serde_json::Value> {
+    mutate(&app, move |cfg| {
+        if cfg.panes.len() <= 1 {
+            return Err("至少要留一栏".to_string());
+        }
+        if index >= cfg.panes.len() {
+            return Err("格子编号超出范围".to_string());
+        }
+        cfg.panes.remove(index);
+        let count = cfg.panes.len();
+        cfg.weights = layout::normalize_weights(None, count);
+        if !cfg.panes.contains(&cfg.active_id) {
+            cfg.active_id = cfg.panes[0].clone();
+        }
+        Ok(serde_json::json!({ "ok": true }))
+    })
+}
+
 #[tauri::command]
 pub fn layout_equalize(app: AppHandle) {
     mutate(&app, |cfg| {
@@ -795,6 +881,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         app_get_state, app_open_external, app_quit, app_version,
         tab_activate, tab_reload, tab_reload_hard, tab_home, tab_devtools, tab_zoom,
         layout_get, layout_set_panes, layout_single, layout_equalize,
+        layout_swap, layout_place, layout_remove_pane,
         layout_drag, layout_drag_end, pane_focus,
         services_add, services_update, services_remove, services_set_hidden, services_reorder,
         config_set_preload, config_get_preload, config_set_hibernate,

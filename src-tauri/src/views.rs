@@ -20,7 +20,7 @@ use tauri::webview::{NewWindowResponse, WebviewBuilder};
 use tauri::{LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl, Window, Wry};
 
 use crate::config::{partition_dir, Config};
-use crate::layout::{compute_geometry, Geometry, MIN_SANE_HEIGHT, MIN_SANE_WIDTH};
+use crate::layout::{compute_grid, GridShape, Geometry, MIN_SANE_HEIGHT, MIN_SANE_WIDTH};
 
 pub const SHELL_LABEL: &str = "shell";
 pub const MAIN_WINDOW: &str = "main";
@@ -171,6 +171,17 @@ pub fn create_shell(window: &Window, w: f64, h: f64) -> tauri::Result<Webview<Wr
 /// 刻意把「算」和「做」分开：计算阶段要读 ViewManager（需要锁），
 /// 执行阶段要调 add_child（会阻塞等主线程）。两件事必须发生在锁的两侧，
 /// 否则就是死锁——主线程卡在等我们放锁，我们卡在等主线程干活。
+/// 一个 webview 该摆在哪儿。
+/// 田字格之后位置是二维的，原来那个 (id, x, width) 三元组不够用了。
+#[derive(Debug, Clone)]
+pub struct PanePlace {
+    pub id: String,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
 pub struct LayoutPlan {
     pub geometry: Geometry,
     pub top: i32,
@@ -179,9 +190,9 @@ pub struct LayoutPlan {
     /// 要藏起来的（进程还在，点回来是瞬时的）
     pub to_hide: Vec<String>,
     /// 已经存在、只需要挪位置的
-    pub to_move: Vec<(String, f64, f64)>,
-    /// 还不存在、需要新建的（id, url, x, width）
-    pub to_create: Vec<(String, String, f64, f64)>,
+    pub to_move: Vec<PanePlace>,
+    /// 还不存在、需要新建的（摆放位置 + 起始地址）
+    pub to_create: Vec<(PanePlace, String)>,
 }
 
 /// 第一阶段：纯计算。**必须**在持有 views 锁时调用，不碰任何会阻塞的窗口 API。
@@ -208,7 +219,10 @@ pub fn plan_layout(
 
     let to_hide: Vec<String> = mgr.live.iter().filter(|id| !visible.contains(id)).cloned().collect();
 
-    let geometry = compute_geometry(width, &visible, &config.weights);
+    // 按栏数挑形状：1 整屏 / 2 左右 / 3 左一右二 / 4 田字格。
+    // body_height 是内容区真实高度（已经扣掉标签栏），二维布局要靠它。
+    let shape = GridShape::for_count(visible.len());
+    let geometry = compute_grid(width, body_height as i32, &visible, &config.weights, shape);
     let mut to_move = Vec::new();
     let mut to_create = Vec::new();
 
@@ -216,11 +230,26 @@ pub fn plan_layout(
         // 摆在屏幕上的那几栏永远算活跃：看得见的东西不该在你眼前被回收
         mgr.touch(&pane.id);
         if mgr.live.contains(&pane.id) {
-            to_move.push((pane.id.clone(), pane.x as f64, pane.width as f64));
+            to_move.push(PanePlace {
+                id: pane.id.clone(),
+                x: pane.x as f64,
+                y: pane.y as f64,
+                w: pane.width as f64,
+                h: pane.height as f64,
+            });
         } else {
             let url = start_url(config, &pane.id);
             if !url.is_empty() {
-                to_create.push((pane.id.clone(), url, pane.x as f64, pane.width as f64));
+                to_create.push((
+                    PanePlace {
+                        id: pane.id.clone(),
+                        x: pane.x as f64,
+                        y: pane.y as f64,
+                        w: pane.width as f64,
+                        h: pane.height as f64,
+                    },
+                    url,
+                ));
             }
         }
     }
@@ -253,19 +282,23 @@ pub fn execute_plan(window: &Window, plan: &LayoutPlan) -> Vec<String> {
         }
     }
 
-    for (id, x, w) in &plan.to_move {
-        if let Some(view) = window.get_webview(&view_label(id)) {
-            let _ = view.set_position(LogicalPosition::new(*x, plan.top as f64));
-            let _ = view.set_size(LogicalSize::new(*w, plan.body_height));
+    for place in &plan.to_move {
+        if let Some(view) = window.get_webview(&view_label(&place.id)) {
+            // y 要加上标签栏高度：几何是相对内容区算的，摆位要的是窗口坐标
+            let _ = view.set_position(LogicalPosition::new(place.x, plan.top as f64 + place.y));
+            let _ = view.set_size(LogicalSize::new(place.w, place.h));
             let _ = view.show();
         }
     }
 
     let mut created = Vec::new();
-    for (id, url, x, w) in &plan.to_create {
-        match create_view(window, id, url, *x, plan.top as f64, *w, plan.body_height) {
-            Ok(_) => created.push(id.clone()),
-            Err(err) => eprintln!("[aihub] 建视图失败 {id}: {err}"),
+    for (place, url) in &plan.to_create {
+        match create_view(
+            window, &place.id, url,
+            place.x, plan.top as f64 + place.y, place.w, place.h,
+        ) {
+            Ok(_) => created.push(place.id.clone()),
+            Err(err) => eprintln!("[aihub] 建视图失败 {}: {err}", place.id),
         }
     }
     created

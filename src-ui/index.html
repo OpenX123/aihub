@@ -167,12 +167,25 @@
     background: color-mix(in srgb, var(--accent) 12%, transparent);
     border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent);
   }
-  body.dragging-tab .dz { opacity: .55; transform: none; }
+  body.dragging-tab .dz { opacity: .5; transform: none; }
   body.dragging-tab .dz.hot {
     opacity: 1;
     background: color-mix(in srgb, var(--accent) 26%, transparent);
     border-style: solid;
     border-color: var(--accent);
+    /* 压上去时微微涨一点，"这格被选中了"的手感 */
+    transform: scale(1.012);
+  }
+  /* 空位（还没有服务的格子）用更淡的线，和"要换掉谁"区分开 */
+  body.dragging-tab .dz.empty {
+    opacity: .35;
+    border-color: color-mix(in srgb, var(--fg-dim) 50%, transparent);
+    background: color-mix(in srgb, var(--fg-dim) 6%, transparent);
+  }
+  body.dragging-tab .dz.empty.hot {
+    opacity: 1;
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
 
   /* 投放区中间那行字：说明松手会发生什么 */
@@ -197,16 +210,19 @@
      底下露出的是外壳自己的背景，不需要再盖遮罩压暗。 */
 
   /* 每个投放区顶部标出这一栏现在是谁，拖的时候知道自己在替换什么 */
+  /* 格子中央标出「这格现在是谁」，拖的时候一眼看清会换掉什么 */
   .dz .dz-owner {
     position: absolute;
     left: 50%;
-    top: 18px;
-    transform: translateX(-50%);
-    font-size: 12px;
+    top: calc(50% - 26px);
+    transform: translate(-50%, -50%);
+    font-size: 15px;
+    font-weight: 600;
     color: var(--fg-dim);
     white-space: nowrap;
     pointer-events: none;
   }
+  .dz.hot .dz-owner { color: var(--fg-strong); }
 
   /* ======================= 添加 AI 面板 ======================= */
   #addpanel {
@@ -923,7 +939,7 @@
     /* 新增的投放区和添加面板：位移一律去掉，只保留淡入淡出 */
     .ap-card, #addpanel.closing .ap-card { transform: none !important; }
     .ap-item:active { transform: none !important; }
-    .dz, body.dragging-tab .dz { transform: none !important; }
+    .dz, body.dragging-tab .dz, body.dragging-tab .dz.hot { transform: none !important; }
   }
 
   /* 系统要求「减少透明」时：遮罩和面板都变不透明，别透出后面的内容 */
@@ -1472,56 +1488,79 @@
   const EDGE_RATIO = 0.28; // 左右各 28% 算「插入新栏」
 
   /** 拖拽开始时按当前几何铺一遍投放区 */
+  // 田字格投放区：把内容区按「当前有几栏」铺成格子，拖到哪格就放哪格。
+  //
+  // 和之前那版横向边缘条的区别：
+  //   · 每个落点是一整块矩形，不是窄边条 —— 手不用那么准
+  //   · 已占用的格子显示「与 X 互换」，空格子显示「放这里」
+  //   · 栏数没满时多给一个空位，拖进去就多一栏
   function buildDropZones() {
     dropLayer.innerHTML = '';
     dropTargets = [];
     hotZone = null;
 
-    const panes = geometry.panes || [];
-    if (!panes.length) return;
+    const cur = state.panes || [];
+    const max = state.maxPanes || 4;
+    // 拖拽时预览的是「放下之后」的格局：没满就多留一个空位
+    const slots = Math.min(max, cur.length + (cur.length < max ? 1 : 0));
+    const rects = slotRects(slots);
 
-    const full = state.panes.length >= (state.maxPanes || 4);
-    const barTop = geometry.top || 0;
-
-    panes.forEach((pane, i) => {
-      const w = pane.width;
-      const edge = full ? 0 : Math.min(w * EDGE_RATIO, 160);
-
-      // 左边缘：在这一栏前面插一栏（第一栏才给，避免和上一栏的右边缘重叠）
-      if (edge > 0 && i === 0) {
-        addZone(pane.x, edge, 'insert', i, '新增一栏');
-      }
-      // 中间：替换这一栏
-      addZone(pane.x + edge, Math.max(0, w - edge * 2), 'replace', i,
-              full ? '替换这一栏' : '替换这一栏');
-      // 右边缘：在这一栏后面插一栏
-      if (edge > 0) {
-        addZone(pane.x + w - edge, edge, 'insert', i + 1, '新增一栏');
-      }
-    });
-
-    function addZone(x, width, kind, index, label) {
-      if (width <= 8) return;
+    rects.forEach((r, i) => {
+      const occupant = cur[i];
+      const svc = occupant ? state.services.find((x) => x.id === occupant) : null;
       const el = document.createElement('div');
-      el.className = 'dz';
-      el.dataset.label = label;
-      if (kind === 'replace') {
-        const svc = state.services.find((x) => x.id === (state.panes[index] || ''));
-        if (svc) {
-          const owner = document.createElement('div');
-          owner.className = 'dz-owner';
-          owner.textContent = '当前：' + svc.name;
-          el.appendChild(owner);
-        }
+      el.className = 'dz' + (svc ? '' : ' empty');
+      el.dataset.label = svc
+        ? (svc.id === (tabDrag && tabDrag.id) ? '放回原位' : '与「' + svc.name + '」互换')
+        : '放这里（新增一栏）';
+      el.style.left = r.x + 'px';
+      el.style.top = r.y + 'px';
+      el.style.width = r.w + 'px';
+      el.style.height = r.h + 'px';
+
+      if (svc) {
+        const owner = document.createElement('div');
+        owner.className = 'dz-owner';
+        owner.textContent = svc.name;
+        el.appendChild(owner);
       }
-      el.style.left = x + 'px';
-      el.style.width = width + 'px';
-      el.style.top = '6px';
-      el.style.height = 'calc(100% - 12px)';
       dropLayer.appendChild(el);
-      dropTargets.push({ el, kind, index });
+      dropTargets.push({ el, index: i, occupied: Boolean(svc) });
+    });
+  }
+
+  /**
+   * N 个格子在内容区里的位置。形状和 Rust 侧的 compute_grid 必须一致，
+   * 否则拖拽预览和落下后的真实布局对不上：
+   *   1 整屏 / 2 左右 / 3 左一右二 / 4 田字格
+   */
+  function slotRects(n) {
+    const layer = dropLayer.getBoundingClientRect();
+    const W = layer.width, H = layer.height;
+    const g = geometry.gap || 4;
+    const halfW = Math.round((W - g) / 2), rightW = W - g - halfW;
+    const halfH = Math.round((H - g) / 2), bottomH = H - g - halfH;
+
+    if (n <= 1) return [{ x: 0, y: 0, w: W, h: H }];
+    if (n === 2) {
+      return [
+        { x: 0, y: 0, w: halfW, h: H },
+        { x: halfW + g, y: 0, w: rightW, h: H },
+      ];
     }
-    void barTop; // 顶部偏移由 CSS 的 #dropzones{top} 负责，这里只排水平方向
+    if (n === 3) {
+      return [
+        { x: 0, y: 0, w: halfW, h: H },
+        { x: halfW + g, y: 0, w: rightW, h: halfH },
+        { x: halfW + g, y: halfH + g, w: rightW, h: bottomH },
+      ];
+    }
+    return [
+      { x: 0, y: 0, w: halfW, h: halfH },
+      { x: halfW + g, y: 0, w: rightW, h: halfH },
+      { x: 0, y: halfH + g, w: halfW, h: bottomH },
+      { x: halfW + g, y: halfH + g, w: rightW, h: bottomH },
+    ];
   }
 
   /** 拖拽过程中根据鼠标位置点亮对应的投放区 */
@@ -1554,34 +1593,12 @@
     syncViewYield();
   }
 
-  /** 在页面区域松手：按落点改布局 */
+  /** 在页面区域松手：把这个服务放进那个格子 */
   async function applyDrop(dragId) {
     if (!hotZone) return false;
-    const { kind, index } = hotZone;
-    const panes = state.panes.slice();
-
-    const dup = panes.indexOf(dragId); // 这个服务是不是已经占着某一栏
-
-    if (kind === 'replace') {
-      if (panes[index] === dragId) return true; // 原地放回，什么都不用做
-      // 先写目标栏再摘掉原来那栏：顺序反过来的话 index 会因为 splice 而错位
-      panes[index] = dragId;
-      if (dup >= 0 && dup !== index) panes.splice(dup, 1);
-    } else {
-      // 新增一栏。先判上限再动数组——改完再报错会留下一个已经被改坏的
-      // panes（虽然没提交，但后面任何基于它的判断都是错的）。
-      // dup >= 0 时是「把已有的那栏挪个位置」，栏数不变，不占新名额。
-      if (dup < 0 && panes.length >= (state.maxPanes || 4)) {
-        toast('最多同时显示 ' + (state.maxPanes || 4) + ' 栏', true);
-        return false;
-      }
-      if (dup >= 0) panes.splice(dup, 1);
-      // 摘掉原栏之后，落点在它右边的话索引要往左挪一格
-      const at = Math.max(0, Math.min(panes.length, dup >= 0 && dup < index ? index - 1 : index));
-      panes.splice(at, 0, dragId);
-    }
-
-    const res = await window.api.setPanes(panes);
+    // 落点语义统一交给 Rust：index < 栏数 = 放进/互换那一格，
+    // index == 栏数 = 追加一格。前端不自己拼 panes 数组，省得两边算法走样。
+    const res = await window.api.placePane(dragId, hotZone.index);
     if (!res || !res.ok) {
       toast((res && res.error) || '分屏失败', true);
       return false;
@@ -1591,13 +1608,26 @@
 
   // 投放区的 dragover / drop 挂在容器上（事件委托）：
   // 子元素是拖拽开始时才建的，一个个绑代价大，而且要反复解绑。
+  // dragover 用捕获阶段挂在容器上。
+  //
+  // 之前拖过去光标一直显示「禁用」：事件先落在 .dz 子元素身上，而子元素没有
+  // 自己的 dragover 处理器去调 preventDefault，浏览器就判定这里不允许放置。
+  // 捕获阶段能在事件到达子元素之前先拿到它，一次性解决所有子元素。
   dropLayer.addEventListener('dragover', (event) => {
     if (!tabDrag) return;
-    // preventDefault 是 HTML5 DnD 允许放置的开关，不调就收不到 drop
+    // preventDefault 是 HTML5 DnD「允许放置」的开关，不调就是禁用光标 + 收不到 drop
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     updateHotZone(event.clientX, event.clientY);
-  });
+  }, true);
+
+  // dragenter 同理：不拦下来的话某些时机浏览器仍会判定不可放置
+  dropLayer.addEventListener('dragenter', (event) => {
+    if (!tabDrag) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  }, true);
 
   // 拖拽收尾的唯一出口。挂在 document 上（捕获阶段）而不是标签按钮上：
   // 标签节点会被 renderTabs 重建，绑在旧节点上的 dragend 收不到。
@@ -1613,6 +1643,7 @@
     if (!tabDrag) return;
     event.preventDefault();
     event.stopPropagation();
+    updateHotZone(event.clientX, event.clientY); // 以松手那一刻的位置为准
     const dragId = tabDrag.id;
     const ok = await applyDrop(dragId);
     endDropMode();

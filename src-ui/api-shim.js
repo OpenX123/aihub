@@ -115,6 +115,13 @@
     /** 功能 2：标签栏显示 / 收起。收起后站点视图铺满整窗。 */
     setTabBar: (visible) => invoke('window_set_tab_bar', { visible: Boolean(visible) }),
 
+    /** 把服务放进第 index 个格子：index < 栏数 = 放进/互换那格，== 栏数 = 追加一格 */
+    placePane: (id, index) => invoke('layout_place', { id, index }),
+    /** 两个格子里的服务对调（位置大小不变，只换内容） */
+    swapPanes: (a, b) => invoke('layout_swap', { a, b }),
+    /** 把第 index 格从布局里去掉 */
+    removePane: (index) => invoke('layout_remove_pane', { index }),
+
     /** 内置目录里还没加到标签栏上的站点（「添加 AI」面板用） */
     availableServices: () => invoke('services_available'),
     /** 把内置站点加到标签栏上 */

@@ -22,6 +22,33 @@ pub struct PaneRect {
     pub index: usize,
     pub x: i32,
     pub width: i32,
+    /// 相对内容区顶边（不含标签栏）。一维分栏时恒为 0。
+    pub y: i32,
+    pub height: i32,
+}
+
+/// 分屏怎么摆。
+///
+/// 1 栏铺满；2 栏左右；3 栏是「左边一整栏 + 右边上下两格」；
+/// 4 栏是田字格 2×2。这是用户明确要的形状，不是自动推导出来的。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum GridShape {
+    Single,
+    Columns,   // 横向平铺（2 栏时的默认）
+    OneTwo,    // 左 1 + 右 2
+    Quad,      // 田字格 2x2
+}
+
+impl GridShape {
+    /// 按栏数挑默认形状。
+    pub fn for_count(n: usize) -> Self {
+        match n {
+            0 | 1 => GridShape::Single,
+            2 => GridShape::Columns,
+            3 => GridShape::OneTwo,
+            _ => GridShape::Quad,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -65,8 +92,81 @@ pub fn normalize_weights(weights: Option<&[f64]>, count: usize) -> Vec<f64> {
     list.into_iter().map(|w| w / sum).collect()
 }
 
-/// 按当前占比算出每栏的矩形。最后一栏吃掉舍入误差，保证右边缘严格贴合窗口。
+/// 按当前占比算出每栏的矩形（一维横向平铺）。
+/// 最后一栏吃掉舍入误差，保证右边缘严格贴合窗口。
 pub fn compute_geometry(width: i32, pane_ids: &[String], weights: &[f64]) -> Geometry {
+    compute_grid(width, 0, pane_ids, weights, GridShape::Columns)
+}
+
+/// 按形状把 N 个服务摆成网格。
+///
+/// height 传 0 时退化成一维（只算 x/width，y/height 恒为 0），
+/// 老的横向分栏调用方不用改。要田字格就传真实高度 + GridShape::Quad。
+pub fn compute_grid(
+    width: i32,
+    height: i32,
+    pane_ids: &[String],
+    weights: &[f64],
+    shape: GridShape,
+) -> Geometry {
+    let n = pane_ids.len();
+    if n == 0 {
+        return Geometry { panes: Vec::new(), dividers: Vec::new(), usable: width.max(0) };
+    }
+
+    // 二维形状需要真实高度；拿不到就退回横向平铺，总比算出 0 高的视图强
+    let two_d = height > 0 && matches!(shape, GridShape::OneTwo | GridShape::Quad) && n >= 3;
+    if !two_d {
+        return columns_geometry(width, height, pane_ids, weights);
+    }
+
+    let gap = SPLIT_GAP;
+    let half_w = (width - gap) / 2;
+    let right_w = width - gap - half_w; // 右列吃掉舍入误差，右边缘严格贴合
+    let half_h = (height - gap) / 2;
+    let bottom_h = height - gap - half_h;
+
+    let mut panes = Vec::with_capacity(n);
+    let mut push = |index: usize, x: i32, y: i32, w: i32, h: i32| {
+        panes.push(PaneRect {
+            id: pane_ids[index].clone(),
+            index,
+            x,
+            y,
+            width: w.max(0),
+            height: h.max(0),
+        });
+    };
+
+    match shape {
+        // 左边一整栏，右边上下两格
+        GridShape::OneTwo => {
+            push(0, 0, 0, half_w, height);
+            push(1, half_w + gap, 0, right_w, half_h);
+            if n > 2 {
+                push(2, half_w + gap, half_h + gap, right_w, bottom_h);
+            }
+        }
+        // 田字格：左上、右上、左下、右下
+        GridShape::Quad => {
+            push(0, 0, 0, half_w, half_h);
+            push(1, half_w + gap, 0, right_w, half_h);
+            if n > 2 {
+                push(2, 0, half_h + gap, half_w, bottom_h);
+            }
+            if n > 3 {
+                push(3, half_w + gap, half_h + gap, right_w, bottom_h);
+            }
+        }
+        _ => unreachable!("two_d 已经排除了这些形状"),
+    }
+
+    // 网格模式下暂不提供拖动分隔条（要分别处理横竖两组，先把布局做对）
+    Geometry { panes, dividers: Vec::new(), usable: width.max(0) }
+}
+
+/// 横向平铺：原来的一维实现。
+fn columns_geometry(width: i32, height: i32, pane_ids: &[String], weights: &[f64]) -> Geometry {
     let n = pane_ids.len().max(1);
     let usable = usable_width(width, n);
     let mut panes = Vec::with_capacity(pane_ids.len());
@@ -81,7 +181,7 @@ pub fn compute_geometry(width: i32, pane_ids: &[String], weights: &[f64]) -> Geo
             let ratio = weights.get(index).copied().unwrap_or(0.0);
             ((usable as f64 * ratio).round() as i32).max(0)
         };
-        panes.push(PaneRect { id: id.clone(), index, x, width: w });
+        panes.push(PaneRect { id: id.clone(), index, x, width: w, y: 0, height: height.max(0) });
         x += w + SPLIT_GAP;
         used += w;
     }
@@ -249,6 +349,85 @@ mod tests {
         let w = normalize_weights(None, 2);
         let out = drag_divider(1000, &w, 99, 400.0).expect("越界索引应被夹住而不是崩溃");
         assert_eq!(out.len(), 2);
+    }
+
+    // ---------------- 网格布局 ----------------
+
+    #[test]
+    fn quad_tiles_the_window_without_gaps_or_overflow() {
+        let g = compute_grid(1000, 800, &ids(4), &[], GridShape::Quad);
+        assert_eq!(g.panes.len(), 4);
+        // 右边缘和下边缘都要严格贴合，不能留缝也不能溢出
+        let right = g.panes.iter().map(|p| p.x + p.width).max().unwrap();
+        let bottom = g.panes.iter().map(|p| p.y + p.height).max().unwrap();
+        assert_eq!(right, 1000, "右边缘必须贴合窗口");
+        assert_eq!(bottom, 800, "下边缘必须贴合窗口");
+    }
+
+    #[test]
+    fn quad_cells_do_not_overlap() {
+        let g = compute_grid(1001, 777, &ids(4), &[], GridShape::Quad);
+        for (i, a) in g.panes.iter().enumerate() {
+            for b in g.panes.iter().skip(i + 1) {
+                let x_apart = a.x + a.width <= b.x || b.x + b.width <= a.x;
+                let y_apart = a.y + a.height <= b.y || b.y + b.height <= a.y;
+                assert!(x_apart || y_apart, "格子 {} 和 {} 重叠了", a.index, b.index);
+            }
+        }
+    }
+
+    #[test]
+    fn quad_positions_are_top_left_top_right_bottom_left_bottom_right() {
+        let g = compute_grid(1000, 800, &ids(4), &[], GridShape::Quad);
+        let p = &g.panes;
+        assert!(p[0].x < p[1].x && p[0].y == p[1].y, "0=左上 1=右上");
+        assert!(p[2].x == p[0].x && p[2].y > p[0].y, "2=左下");
+        assert!(p[3].x == p[1].x && p[3].y == p[2].y, "3=右下");
+    }
+
+    #[test]
+    fn one_two_puts_a_full_height_column_on_the_left() {
+        let g = compute_grid(1000, 800, &ids(3), &[], GridShape::OneTwo);
+        assert_eq!(g.panes[0].height, 800, "左栏应通高");
+        assert_eq!(g.panes[0].y, 0);
+        assert!(g.panes[1].y < g.panes[2].y, "右边两格上下排列");
+        assert_eq!(
+            g.panes[1].y + g.panes[1].height + SPLIT_GAP,
+            g.panes[2].y,
+            "右边两格之间要正好留一条缝"
+        );
+    }
+
+    #[test]
+    fn grid_falls_back_to_columns_without_a_real_height() {
+        // 高度拿不到时（窗口最小化等）退回横向平铺，总比算出 0 高的视图强
+        let g = compute_grid(1000, 0, &ids(4), &normalize_weights(None, 4), GridShape::Quad);
+        assert!(g.panes.iter().all(|p| p.y == 0), "退化时应全部在同一行");
+    }
+
+    #[test]
+    fn shape_for_count_matches_the_intended_layouts() {
+        assert_eq!(GridShape::for_count(1), GridShape::Single);
+        assert_eq!(GridShape::for_count(2), GridShape::Columns);
+        assert_eq!(GridShape::for_count(3), GridShape::OneTwo);
+        assert_eq!(GridShape::for_count(4), GridShape::Quad);
+    }
+
+    #[test]
+    fn columns_still_behave_as_before() {
+        // 老的一维路径不能因为加了网格而变味
+        let w = normalize_weights(Some(&[1.0, 1.0, 1.0]), 3);
+        let g = compute_geometry(1200, &ids(3), &w);
+        let last = g.panes.last().unwrap();
+        assert_eq!(last.x + last.width, 1200);
+        assert_eq!(g.dividers.len(), 2, "横向平铺仍然有分隔条");
+    }
+
+    #[test]
+    fn empty_pane_list_yields_nothing() {
+        let g = compute_grid(1000, 800, &[], &[], GridShape::Quad);
+        assert!(g.panes.is_empty());
+        assert!(g.dividers.is_empty());
     }
 
     #[test]
