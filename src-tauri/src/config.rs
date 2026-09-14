@@ -282,6 +282,32 @@ pub fn save(config: &Config) -> std::io::Result<()> {
     std::fs::rename(&tmp, config_path())
 }
 
+/// 清掉待删的分区目录（用户删服务时勾了「清除登录数据」）。
+///
+/// 删服务的当下删不掉：WebView2 正占着那个目录的文件句柄。所以记在
+/// `pending_wipe` 里，等下次启动、目录还没被任何 webview 打开时再真正删。
+///
+/// 返回还没删成功的（这次又失败的留到下次），调用方写回配置。
+pub fn wipe_pending(pending: &[String]) -> Vec<String> {
+    let mut remaining = Vec::new();
+    for id in pending {
+        let dir = partition_dir(id);
+        if !dir.exists() {
+            continue; // 已经没了，从待办里划掉
+        }
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => eprintln!("[aihub] 已清除登录数据: {id}"),
+            Err(err) => {
+                // 删不掉就留到下次，不要把它从列表里丢掉——
+                // 用户勾了「清除」，我们就得一直试到真的清掉为止
+                eprintln!("[aihub] 清除 {id} 的登录数据失败（留到下次启动再试）: {err}");
+                remaining.push(id.clone());
+            }
+        }
+    }
+    remaining
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,5 +404,28 @@ mod tests {
         assert_eq!(cfg.theme, "system");
         assert_eq!(cfg.hotkey.accelerator, HOTKEY_DEFAULT);
         assert_eq!(cfg.hotkey.action, "toggle");
+    }
+
+    #[test]
+    fn wipe_skips_ids_whose_directory_is_already_gone() {
+        // 目录不存在 = 已经清干净了，应该从待办里划掉而不是一直重试
+        let remaining = wipe_pending(&["definitely-not-a-real-service-id-12345".to_string()]);
+        assert!(remaining.is_empty(), "目录不存在的应当直接划掉");
+    }
+
+    #[test]
+    fn partition_dir_is_separate_from_electron_partitions() {
+        // Electron 版用 userData/Partitions/<id>，两套运行时的存储格式不兼容，
+        // 放同一个目录只会互相污染。
+        let dir = partition_dir("claude");
+        let s = dir.to_string_lossy().replace('\\', "/");
+        assert!(s.contains("/WebViews/claude"), "实际是 {s}");
+        assert!(!s.contains("/Partitions/"), "不能和 Electron 的分区目录重叠");
+    }
+
+    #[test]
+    fn partition_dirs_are_unique_per_service() {
+        // 两个服务共用一个目录 = 登录态互串，这是整个应用的核心卖点所在
+        assert_ne!(partition_dir("claude"), partition_dir("chatgpt"));
     }
 }

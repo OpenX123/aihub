@@ -70,20 +70,15 @@ pub fn relayout(app: &tauri::AppHandle) {
     }; // <- 锁在这里放掉
 
     let Some(plan) = plan else {
-        eprintln!("[aihub] relayout: 尺寸退化 {width}x{height}，跳过");
+        // 最小化时 Windows 会给出退化尺寸，跳过是正常行为，不用喊
         return;
     };
-    eprintln!(
-        "[aihub] relayout: {}x{} 建={:?} 挪={:?} 藏={:?}",
-        width, height,
-        plan.to_create.iter().map(|c| &c.0).collect::<Vec<_>>(),
-        plan.to_move.iter().map(|m| &m.0).collect::<Vec<_>>(),
-        plan.to_hide,
-    );
 
     // --- 第 3 段：无锁执行 ---
     let created = views::execute_plan(&window, &plan);
-    eprintln!("[aihub] relayout: 实际建出 {created:?}");
+    if !created.is_empty() {
+        eprintln!("[aihub] 新建站点视图: {created:?}");
+    }
 
     if !created.is_empty() {
         let state = app.state::<AppState>();
@@ -320,7 +315,17 @@ fn has_unsent_draft(window: &tauri::Window, id: &str) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let config = config::load();
+    let mut config = config::load();
+    // 上次删服务时勾了「清除登录数据」的，现在目录没被占用，可以真的删了
+    if !config.pending_wipe.is_empty() {
+        config.pending_wipe = config::wipe_pending(&config.pending_wipe);
+    }
+    // normalize() 只在内存里补齐字段。启动时立刻回写一次，把升级结果落盘：
+    // 否则老用户装上新版却什么都不改，配置文件会一直停在 v3，
+    // 每次启动都要重算一遍迁移，而且文件内容和实际生效的状态对不上。
+    if let Err(err) = config::save(&config) {
+        eprintln!("[aihub] 启动时回写配置失败: {err}");
+    }
     let always_on_top = config.always_on_top;
 
     tauri::Builder::default()
