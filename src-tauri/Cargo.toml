@@ -1,6 +1,6 @@
 [package]
 name = "aihub"
-version = "0.3.1"
+version = "0.3.2"
 description = "把常用的 AI 聊天网站聚合到一个窗口里"
 authors = ["Aihub contributors"]
 edition = "2021"
