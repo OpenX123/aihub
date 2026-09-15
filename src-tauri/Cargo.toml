@@ -35,6 +35,19 @@ windows = { version = "0.58", features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 
+# 只在 mac 上用来摘掉窗口的 FullSizeContentView（见 src/macos.rs）。
+# 这两个 crate 本来就在 tauri 的依赖树里（wry 直接用），引进来不增加什么体积；
+# 特性清单跟着 wry 走，别用默认特性（默认会把 AppKit 全套拖进来）。
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "NSWindow",
+  "NSView",
+  "NSResponder",
+] }
+
 [profile.release]
 codegen-units = 1
 lto = true

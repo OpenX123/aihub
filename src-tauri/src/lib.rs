@@ -12,6 +12,8 @@
 pub mod commands;
 pub mod config;
 pub mod layout;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod services;
 pub mod views;
 
@@ -190,7 +192,7 @@ fn toggle_window(app: &tauri::AppHandle) {
 
 /// 托盘图标：窗口收进后台之后仍然有一个能点回来的入口。
 ///
-/// 左键点图标 = 唤出/收起，右键菜单里有「显示」和「退出」。
+/// 左键点图标 = 唤出/收起，右键菜单里有「显示」「显示 / 隐藏标签栏」「退出」。
 /// 退出必须在这里给一条明路——`close_to_tray` 开着时点关闭按钮只是隐藏，
 /// 没有托盘菜单的话用户就只能去任务管理器杀进程了。
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -198,8 +200,11 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
     let show = MenuItem::with_id(app, "show", "显示 Aihub", true, None::<&str>)?;
+    // 标签栏收起来之后，外壳整块被站点页面盖住，设置面板再也点不开——
+    // 托盘菜单是唯一还能把标签栏放回来的入口（macOS 上就是菜单栏图标）。
+    let toggle_bar = MenuItem::with_id(app, "toggle-bar", "显示 / 隐藏标签栏", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &toggle_bar, &quit])?;
 
     TrayIconBuilder::with_id("aihub-tray")
         .icon(app.default_window_icon().cloned().ok_or(tauri::Error::WebviewNotFound)?)
@@ -215,6 +220,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                     let _ = w.set_focus();
                 }
             }
+            "toggle-bar" => commands::toggle_tab_bar(app),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -230,6 +236,41 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         })
         .build(app)?;
     Ok(())
+}
+
+/// 这一刻托盘图标是不是必须存在。
+///
+/// 单独抽出来是为了能单测：这条不变式一破，用户就会掉进「什么都点不到」的状态。
+fn tray_needed(config: &Config) -> bool {
+    config.hotkey.tray || config.hotkey.close_to_tray || !config.tab_bar_visible
+}
+
+/// 托盘图标的开关要跟着「有没有东西被藏起来」走，而不是只跟着用户那个设置。
+///
+/// 托盘是唯一一条常驻的回头路：标签栏收起来之后外壳被站点页面整块盖住，
+/// 设置面板点不开；`close_to_tray` 开着时点关闭只是把窗口藏了。
+/// 这两件事只要有一件成立就得有托盘图标，否则用户会掉进一个
+/// 「什么都点不到、只能去杀进程」的状态——macOS 上收起标签栏回不去就是这一类。
+///
+/// 用 `hotkey.tray` 这个设置决定「没藏东西时要不要常驻」；藏了东西时即使
+/// 用户把那个设置关了也会临时把图标挂出来，东西放回去就还给用户。
+pub fn ensure_tray(app: &tauri::AppHandle) {
+    let cfg = app.state::<AppState>().snapshot();
+    let needed = tray_needed(&cfg);
+    let exists = app.tray_by_id("aihub-tray").is_some();
+
+    match (needed, exists) {
+        (true, false) => match build_tray(app) {
+            // 这条日志是「回头路还在不在」的凭据：收起标签栏时它必须打出来。
+            Ok(()) => eprintln!("[aihub] 托盘图标已就绪"),
+            Err(err) => eprintln!("[aihub] 托盘图标创建失败: {err}"),
+        },
+        (false, true) => {
+            app.remove_tray_by_id("aihub-tray");
+            eprintln!("[aihub] 托盘图标已收起（没有东西藏着，用户也把常驻关了）");
+        }
+        _ => {}
+    }
 }
 
 /// 后台标签休眠的扫描线程。
@@ -362,11 +403,36 @@ pub fn run() {
                 .always_on_top(always_on_top)
                 .build()?;
 
+            // macOS 上内容视图默认铺满整个窗口框（系统标题栏压在内容顶上），
+            // 44px 的标签栏会被盖掉大半。必须在建 webview 之前摘掉：内容区由此
+            // 从标题栏下方开始，下面 create_shell 拿到的尺寸才是对的。
+            #[cfg(target_os = "macos")]
+            match macos::pin_content_below_titlebar(&window) {
+                Ok(true) => eprintln!("[aihub] 已把内容区拉回系统标题栏下方"),
+                Ok(false) => {}
+                Err(err) => {
+                    eprintln!("[aihub] 摘 FullSizeContentView 失败，标签栏会被标题栏压住: {err}")
+                }
+            }
+
             let size = window.inner_size()?;
             let scale = window.scale_factor().unwrap_or(1.0);
             let w = size.width as f64 / scale;
             let h = size.height as f64 / scale;
             eprintln!("[aihub] 窗口就绪 {w}x{h} scale={scale}");
+
+            // 内外尺寸差是「内容区有没有被系统标题栏压住」的信号，故意留在日志里：
+            // macOS 上两者相等 = 内容视图铺满整个窗口框，系统标题栏压在内容顶上，
+            // 顶部 44px 的标签栏会被吃掉一大截（见 macos.rs）。一眼就能看出来。
+            if let (Ok(outer), Ok(outer_pos), Ok(inner_pos)) =
+                (window.outer_size(), window.outer_position(), window.inner_position())
+            {
+                eprintln!(
+                    "[aihub] 窗口几何 inner={}x{} outer={}x{} outerPos=({},{}) innerPos=({},{})",
+                    size.width, size.height, outer.width, outer.height,
+                    outer_pos.x, outer_pos.y, inner_pos.x, inner_pos.y
+                );
+            }
             match views::create_shell(&window, w, h) {
                 Ok(_) => eprintln!("[aihub] 外壳 webview 已创建"),
                 Err(err) => {
@@ -414,11 +480,7 @@ pub fn run() {
             {
                 let cfg = handle.state::<AppState>().snapshot();
                 register_hotkey(&handle, &cfg.hotkey.accelerator, cfg.hotkey.enabled);
-                if cfg.hotkey.tray {
-                    if let Err(err) = build_tray(&handle) {
-                        eprintln!("[aihub] 托盘图标创建失败: {err}");
-                    }
-                }
+                ensure_tray(&handle);
             }
 
             // 布局必须从后台线程驱动（add_child 会阻塞等主线程），
@@ -434,8 +496,10 @@ pub fn run() {
             // 后台标签休眠的扫描线程
             spawn_hibernate_thread(handle.clone());
 
-            // 自检：AIHUB_SELFTEST=<脚本路径> 时，等外壳就绪后在里面跑一遍那个脚本，
-            // 把结果打到 stderr。用来自动化验证拖拽分屏这类「合成鼠标事件做不到」的交互。
+            // 自检：AIHUB_SELFTEST=<脚本路径> 时，等外壳就绪后在里面跑一遍那个脚本。
+            // 脚本的返回值回不来（WKWebView 的 evaluateJavaScript 不等 promise），
+            // 所以结论由脚本调 debug_note 打到 stderr。
+            // 现在拖拽分屏也走这条链路（tools/tauri-drag-selftest.js）。
             #[cfg(debug_assertions)]
             if let Ok(path) = std::env::var("AIHUB_SELFTEST") {
                 let h = handle.clone();
@@ -454,4 +518,37 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("Aihub 启动失败");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hidden_tab_bar_always_leaves_a_way_back() {
+        let mut cfg = Config::default();
+        cfg.hotkey.tray = false;
+        cfg.hotkey.close_to_tray = false;
+        assert!(!tray_needed(&cfg), "什么都没藏起来时，托盘图标该听用户设置");
+
+        // 收起标签栏之后，外壳整块被站点页面盖住，设置面板再也点不开——
+        // 这时候没有托盘图标就等于没有回头路（macOS 上真实踩到过）。
+        cfg.tab_bar_visible = false;
+        assert!(tray_needed(&cfg), "收起标签栏后必须有托盘图标，否则没有入口放回来");
+    }
+
+    #[test]
+    fn close_to_tray_also_requires_the_tray() {
+        let mut cfg = Config::default();
+        cfg.hotkey.tray = false;
+        cfg.hotkey.close_to_tray = true;
+        assert!(tray_needed(&cfg), "点关闭只隐藏时，托盘是唯一能把窗口找回来的入口");
+    }
+
+    #[test]
+    fn explicit_tray_setting_is_respected() {
+        let cfg = Config::default();
+        assert!(cfg.hotkey.tray, "托盘图标默认开着");
+        assert!(tray_needed(&cfg));
+    }
 }

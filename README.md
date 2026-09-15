@@ -584,6 +584,33 @@ npm start
 `tools/layout-dump.js` 会把每栏几何、分隔条中心点的物理像素坐标写进这个文件；
 再用 `SendInput` 在那些坐标上按下、移动、抬起，就能验证「拖拽真的改变了权重并落盘」。
 
+### 检查 macOS 上标签栏有没有被系统标题栏压住（macOS 专用）
+
+```bash
+cargo build --manifest-path src-tauri/Cargo.toml
+bash tools/check-macos-titlebar.sh            # 也可以传路径，量 release 那份
+```
+
+Tauri 在 macOS 上默认把窗口建成 `FullSizeContentView`（见第 7 节「mac 上的标题栏」），
+内容视图铺满整个窗口框，系统标题栏会压在内容顶上——**几何算得没错，错的是「内容区从哪儿开始」**，
+光看代码看不出来。这个脚本量的是窗口内外尺寸差：差够一个标题栏的高度（约 28px），
+才说明内容区真的在标题栏下方、44px 的标签栏是完整露出来的。
+
+### 拖拽分屏 / 标签换顺序（Tauri，debug 构建）
+
+```bash
+AIHUB_SELFTEST=tools/tauri-drag-selftest.js \
+  cargo run --manifest-path src-tauri/Cargo.toml
+```
+
+脚本在外壳里合成「按下 → 移动 → 松手」，跑完在 stderr 上打印
+`[selftest] 分栏 OK … / 换顺序 OK … / Esc 取消 OK`，失败打印 `失败: …` 并抛错。
+它只是临时改布局和标签顺序，**结束（含失败）一定还原**。
+
+拖拽以前是「合成事件测不到」的典型，只能注入真实鼠标才能验。Tauri 版把标签拖拽改成
+自己跟踪鼠标事件之后（原因见第 7 节「mac 上的页面内拖放」），这条链路才第一次能用
+合成事件测——所以顺手把它做成了回归测试。
+
 ---
 
 ## 7. 已知限制（务必先看）
@@ -599,6 +626,22 @@ npm start
   只有 macOS 14+ 才有；13 及以下装上会出现登录态互串，所以直接挡住了。
 - **macOS 上渲染引擎是 WKWebKit 不是 Chromium**。各家站点都是重前端 SPA，
   渲染差异改不了——那是系统的 webview。Windows 上不存在这个问题（WebView2 就是 Chromium 内核）。
+- **mac 上的标题栏**：Tauri 在 macOS 上默认把窗口建成 `FullSizeContentView`
+  （tauri-runtime-wry 的 `TitleBarStyle::Visible` 分支，为了绕开 tauri#3914），
+  内容视图铺满整个窗口框，而系统标题栏还是那条不透明的——它直接压在内容顶上：
+  44px 的标签栏只剩下十几 px 露出来，收起标签栏后站点页面的顶部 28px 也会被盖住且点不到。
+  `src-tauri/src/macos.rs` 在建 webview 之前把这一位摘掉，内容区回到标题栏下方
+  （和 Windows 同构），`tools/check-macos-titlebar.sh` 量这个差值。
+  代价是 tauri#3914 那个「开着 devtools 缩放窗口会错位」的老问题会回来，日常使用无感。
+- **mac 上的页面内拖放**：wry 会把 macOS 的拖放**目标**回调整个接管（`WryWebView`
+  覆写了 `draggingEntered:` / `performDragOperation:` 等），页面内的非文件拖拽不会
+  转发给 WebKit（tauri-apps/wry#1829、tauri-apps/tauri#14373）。所以标签拖拽**不能**
+  用 HTML5 拖放，改用自己跟踪鼠标事件（见 `src-ui/index.html` 的 `startTabDrag`）：
+  按住期间 AppKit 会把 mousemove 送回「按下的那个视图」，站点视图让位之后整个窗口
+  都是外壳的，落点一直准。顺带的好处是这条链路可以用合成事件测
+  （`tools/tauri-drag-selftest.js`）。
+  **文件拖进对话**是另一回事：站点 webview 必须 `disable_drag_drop_handler()`，
+  否则 Tauri 那套原生处理器会把 drop 直接吃掉、页面上传区收不到（`src-tauri/src/views.rs`）。
 - **登录态导出 / 导入暂时不可用**。点了会明确报错，不是静默失败。需要按 WebView2 的存储格式重做。
 - **右键菜单暂时是自绘的**，不是系统原生菜单。功能一样，观感略有差别。
 - **分屏依赖 Tauri 的 unstable 特性**。已知上游 bug（tauri#10131 / #11170）会让子 webview

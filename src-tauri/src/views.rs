@@ -119,6 +119,16 @@ pub fn create_view(
 
     let app = window.app_handle().clone();
     let builder = WebviewBuilder::new(view_label(id), WebviewUrl::External(parsed))
+        // 站点页面也要关掉原生拖放处理器，否则「往对话里拖文件上传」是死的。
+        //
+        // Tauri 默认给每个 webview 装一个接收文件的处理器，而它不只是「接收」：
+        // wry 的 performDragOperation 里，处理器返回 true 就直接报「已接收」，
+        // **不再调 super**，WebKit 自己那套 HTML5 拖放于是根本不会发生——页面
+        // 拿不到 drop，ChatGPT / Claude 的上传区也就不会亮。（wry 的 drag_drop.rs：
+        // `if !listener(..) { super } else { Bool::YES }`，而 Tauri 装的处理器恒定
+        // 返回 true，见 tauri-runtime-wry lib.rs:4863。）
+        // 关掉之后处理器是 None，wry 回落成 `|_| false`，等于把拖放交还给 WebKit。
+        .disable_drag_drop_handler()
         // 每个站点一个独立的 WebView2 用户数据目录 —— 这就是 Electron 版
         // persist:<id> 分区的等价物，登录态互不干扰的根基。
         .data_directory(partition_dir(id))
@@ -147,23 +157,15 @@ pub fn create_view(
 /// 外壳（标签栏 + 设置面板）。铺满整个窗口，站点视图叠在它上面。
 /// 设置面板打开时站点视图全部移走，外壳就整窗露出来——和 Electron 版同构。
 pub fn create_shell(window: &Window, w: f64, h: f64) -> tauri::Result<Webview<Wry>> {
-    let mut builder = WebviewBuilder::new(SHELL_LABEL, WebviewUrl::App("index.html".into()))
-        // **只关外壳这一个 webview 的原生拖放处理器。**
+    let builder = WebviewBuilder::new(SHELL_LABEL, WebviewUrl::App("index.html".into()))
+        // 关掉外壳的原生拖放处理器：Tauri 默认给每个 webview 装的那个「接收文件」
+        // 处理器在系统层就把拖放接管了（macOS 上直接报「已接收」、不再调 super），
+        // 页面里的 HTML5 拖放收不到 dragover/drop，拖标签过去一直显示禁止光标、
+        // 投放区点不亮。Tauri 文档原话：「This is required to use HTML5 drag and
+        // drop APIs on the frontend on Windows.」
         //
-        // Tauri 默认给每个 webview 装一个原生拖放处理器（接收从资源管理器拖进来的
-        // 文件）。它在系统层就把事件吃掉了，页面里的 HTML5 DnD 收不到 dragover/drop
-        // —— 表现就是拖标签过去一直显示禁止光标、投放区点不亮。
-        // Tauri 文档原话：「This is required to use HTML5 drag and drop APIs
-        // on the frontend on Windows.」
-        //
-        // ## 为什么不影响「往聊天窗口拖文件上传」
-        //
-        // 这个开关是**按 webview** 生效的，而站点 webview（create_view）**没有关**，
-        // 而且它们盖在外壳之上。往 ChatGPT / Claude 页面拖文件时，落点在站点
-        // webview 上，走的是它自己那套原生处理器，完全不受这里影响。
-        //
-        // 真正失去的只有一处：往顶部标签栏那 44px 的窄条上拖文件。那里本来也没有
-        // 接收文件的功能，而标签拖拽分屏正是要在那儿起手。
+        // 站点 webview 同样要关（见 create_view）：那里不关的话，往 ChatGPT /
+        // Claude 页面拖文件会被吞掉，页面自己那套上传逻辑收不到 drop。
         //
         // 注：窗口级的 WindowEvent::DragDrop 救不了这里——它就是由 webview 的
         // drag_drop_handler 转发出来的（tauri-runtime-wry lib.rs:4862），
@@ -173,16 +175,15 @@ pub fn create_shell(window: &Window, w: f64, h: f64) -> tauri::Result<Webview<Wr
     // 调试构建里把图片加载失败的真实 URL 打出来。
     // 迁移时踩过一次：标签栏 logo 全是破图，光看代码分不清是文件没搬过去
     // 还是 CSP 挡了，必须看到浏览器实际请求的那个地址。
+    // 用遮蔽而不是 `mut builder`：release 下这段不存在，`mut` 会变成警告。
     #[cfg(debug_assertions)]
-    {
-        builder = builder.initialization_script(
-            r#"window.addEventListener('error', (e) => {
-                 if (e.target && e.target.tagName === 'IMG') {
-                   console.error('[img-fail]', e.target.src);
-                 }
-               }, true);"#,
-        );
-    }
+    let builder = builder.initialization_script(
+        r#"window.addEventListener('error', (e) => {
+             if (e.target && e.target.tagName === 'IMG') {
+               console.error('[img-fail]', e.target.src);
+             }
+           }, true);"#,
+    );
 
     window.add_child(builder, LogicalPosition::new(0.0, 0.0), LogicalSize::new(w, h))
 }

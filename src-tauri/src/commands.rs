@@ -605,6 +605,9 @@ pub fn config_set_hotkey(app: AppHandle, input: HotkeyInput) -> serde_json::Valu
     // 改完立刻重新注册，否则设置里改了键位却还是老的在生效。
     // 注册失败的原因要回传给前端显示——被别的程序占用是很常见的情况。
     let error = crate::register_hotkey(&app, &cfg.hotkey.accelerator, cfg.hotkey.enabled);
+    // 「点关闭只隐藏」打开之后就只剩托盘能把窗口找回来了，
+    // 所以这个开关一动，托盘图标的有无也要跟着动。
+    crate::ensure_tray(&app);
     serde_json::json!({ "ok": error.is_none(), "hotkey": cfg.hotkey, "error": error })
 }
 
@@ -635,7 +638,16 @@ pub fn window_set_always_on_top(app: AppHandle, on: bool) -> serde_json::Value {
 pub fn window_set_tab_bar(app: AppHandle, visible: bool) -> serde_json::Value {
     // 改完要重排：站点视图的顶边从 44 变成 0（或反过来）
     mutate(&app, |cfg| cfg.tab_bar_visible = visible);
+    // 收起标签栏 = 外壳整块被站点页面盖住，设置面板再也点不开。
+    // 托盘菜单是唯一还能把它放回来的入口，所以这一刻必须保证它存在。
+    crate::ensure_tray(&app);
     serde_json::json!({ "ok": true, "tabBarVisible": visible })
+}
+
+/// 托盘菜单用：把标签栏收起 / 放回来。
+pub fn toggle_tab_bar(app: &AppHandle) {
+    let visible = !app.state::<AppState>().snapshot().tab_bar_visible;
+    window_set_tab_bar(app.clone(), visible);
 }
 
 // ---------------------------------------------------------------------------
@@ -822,6 +834,16 @@ pub fn services_add_builtin(app: AppHandle, id: String) -> CmdResult<serde_json:
     })
 }
 
+/// 自检脚本的报告通道：`AIHUB_SELFTEST` 跑的是一段**异步** JS，而它的返回值
+/// 回不来（WKWebView 的 evaluateJavaScript 不会等 promise），所以脚本用这个
+/// 命令把结论打出来，跑的人（和 CI）就能从 stderr 上看到。
+/// 和 debug_eval 一样只在 debug 构建里存在。
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub fn debug_note(line: String) {
+    println!("[selftest] {line}");
+}
+
 /// 调试用：在外壳 webview 里执行一段 JS。
 ///
 /// 只在 debug 构建里存在。用来在真机上驱动前端逻辑做验证——
@@ -893,6 +915,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         services_available, services_add_builtin,
         #[cfg(debug_assertions)]
         debug_eval,
+        #[cfg(debug_assertions)]
+        debug_note,
         window_set_always_on_top, window_set_tab_bar,
         window_summon, window_hide, ui_overlay,
         update_check, update_install,

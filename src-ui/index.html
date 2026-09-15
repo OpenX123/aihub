@@ -138,9 +138,8 @@
   body.no-tabbar #bar { display: none; }
 
   /* ======================= 拖拽分屏：投放区 =======================
-     拖标签到页面区域时浮出来。每片对应一个落点，鼠标压上去才高亮。
-     只在 body.dragging-tab 时参与命中测试——平时 pointer-events:none，
-     否则会把点击全部吃掉，站点页面就没法用了。 */
+     拖标签到页面区域时浮出来。每片对应一个落点，指针压上去才高亮。
+     整层（含每一片）都不吃鼠标事件：落点是按坐标算的，见 updateHotZone。 */
   #dropzones {
     position: fixed;
     left: 0; right: 0;
@@ -155,7 +154,9 @@
 
   .dz {
     position: absolute;
-    pointer-events: auto;
+    /* 投放区不吃鼠标事件：落点是按坐标算的（updateHotZone），
+       让它们参与命中测试只会给拖拽添乱。 */
+    pointer-events: none;
     border-radius: 10px;
     /* 默认几乎看不见，只给一层很淡的提示；压上去才明显。
        只动 opacity / transform，不动 width/height（那会触发布局）。 */
@@ -206,7 +207,7 @@
   }
   .dz.hot::after { opacity: 1; }
 
-  /* 拖拽期间站点视图已经被主进程整体移走了（见 dragstart），
+  /* 拖拽期间站点视图已经被主进程整体移走了（见 startTabDrag），
      底下露出的是外壳自己的背景，不需要再盖遮罩压暗。 */
 
   /* 每个投放区顶部标出这一栏现在是谁，拖的时候知道自己在替换什么 */
@@ -397,6 +398,26 @@
   }
   /* 拖动中的标签：半透明跟手，落点用一条竖线提示 */
   .tab.dragging { opacity: .4; }
+
+  /* 拖拽时跟手的小标签。自己用鼠标事件接管拖拽之后没有系统拖影了，补一个：
+     不然手感是「按着没反应」，看不出自己正拖着谁。 */
+  .tab-ghost {
+    position: fixed;
+    z-index: 90;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(.96);
+    opacity: .92;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+    background: var(--active);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: var(--fg-strong);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .tab.drop-before::before,
   .tab.drop-after::after {
     content: '';
@@ -1079,7 +1100,7 @@
             <span>
               <strong>显示标签栏</strong>
               <em>关掉之后顶部这一条会收起来，站点页面铺满整个窗口，能多出 44px 的高度。
-                 收起后用全局快捷键或右键菜单仍然能切换标签。</em>
+                 要放回来：点菜单栏 / 托盘里的 Aihub 图标 →「显示 / 隐藏标签栏」。</em>
             </span>
           </label>
         </div>
@@ -1322,7 +1343,9 @@
     const btn = document.createElement('button');
     btn.className = 'tab';
     btn.dataset.id = svc.id;
-    btn.draggable = true;
+    // 拖拽由 bindTabDrag 用鼠标事件自己接管（原因见那里），
+    // 所以这里必须关掉原生的 draggable：留着它只会多出一个走不通的原生拖拽。
+    btn.draggable = false;
     btn.addEventListener('click', () => window.api.activate(svc.id));
     // 中键 = 重新加载该标签
     btn.addEventListener('auxclick', (event) => {
@@ -1360,8 +1383,8 @@
       event.stopPropagation();
       await hideTab(svc.id, svc.name);
     });
-    // × 自己不参与拖拽，否则按住它拖会拖出一个「幽灵标签」
-    close.addEventListener('dragstart', (event) => { event.preventDefault(); event.stopPropagation(); });
+    // × 自己不参与拖拽：bindTabDrag 在 mousedown 里按 .close 跳过它，
+    // 否则按住它拖会把标签一起拖走。
 
     btn.append(img, dot, name, spin, close);
     bindTabDrag(btn, svc.id);
@@ -1378,11 +1401,22 @@
     return node;
   }
 
-  // ---- 拖拽调整标签顺序 ----
-  // 用原生 HTML5 拖放而不是 pointer 事件：标签栏本身是 -webkit-app-region: drag 的窗口拖动区，
-  // 自己用 pointermove 模拟会和「拖动窗口」打架；draggable 元素的拖拽优先级更高，不会误拖窗口。
-  let tabDrag = null; // { id }
-  let dragBailout = 0; // dragend 没来时的兜底定时器
+  // ---- 拖拽调整标签顺序 / 拖到页面区域分屏 ----
+  // 自己用鼠标事件跟踪，**不用 HTML5 拖放**。
+  //
+  // Electron 版用的是 HTML5 拖放，迁到 Tauri 之后在 macOS 上是坏的：wry 把
+  // macOS 的拖放目标回调整个接了过去，页面内的非文件拖拽不会转发给 WebKit
+  // （tauri-apps/wry#1829、tauri-apps/tauri#14373），外壳因此收不到
+  // dragenter/dragover/drop。真机日志里的样子是一串：dragstart → 站点视图让位
+  // → 一路静默 → dragend。表现就是投放框亮着、松手什么也不发生、光标还是「禁止」。
+  //
+  // 自己跟踪鼠标没有这个问题：按住期间 AppKit 会把 mousemove 送回「按下的那个
+  // 视图」，站点视图让位之后整个窗口都是外壳的，坐标一直有效，Windows 上也一样。
+  const DRAG_THRESHOLD = 4; // px：手抖不算拖，点标签仍然只是点标签
+  let tabDrag = null;       // { id, fromX, fromY, active }
+  let dragBailout = 0;      // 鼠标事件丢了时的兜底定时器
+  let dragGhost = null;     // 跟着指针的小标签影子（自己接管后没有系统拖影了）
+  let dragEndedAt = 0;      // 刚拖完，用来压掉随之而来的 click
 
   function clearDropMarks() {
     for (const node of tabNodes.values()) {
@@ -1390,72 +1424,140 @@
     }
   }
 
-  function bindTabDrag(btn, id) {
-    btn.addEventListener('dragstart', (event) => {
-      tabDrag = { id };
-      btn.classList.add('dragging');
-      try {
-        event.dataTransfer.effectAllowed = 'move';
-        // Firefox/Chromium 都要求 dragstart 里写点东西，否则后续 drag 事件不触发
-        event.dataTransfer.setData('text/plain', id);
-      } catch (err) { /* 忽略：拿不到 dataTransfer 也不影响自家的拖拽状态 */ }
-      // 进入拖拽模式。
-      //
-      // 关键：站点 webview 是**原生层，永远盖在外壳页面之上**，鼠标移到页面区域时
-      // 事件落在站点上，外壳这边根本收不到 dragover——投放区就成了摆设。
-      // 所以先让主进程把站点视图整体移走（和打开设置面板是同一套机制），
-      // 外壳整窗露出来，投放区才真的能接到拖拽。
-      document.body.classList.add('dragging-tab');
-      dragYielding = true;
-      syncViewYield();
-      buildDropZones();
-      // 兜底：万一 dragend 因为任何原因没来（浏览器怪癖、拖拽被系统打断），
-      // 让位状态会永久卡住——站点视图一直不回来，整个应用看起来就是坏的。
-      // 这比漏掉一次收尾严重得多，所以宁可多设一道定时器。
-      clearTimeout(dragBailout);
-      dragBailout = setTimeout(() => {
-        if (document.body.classList.contains('dragging-tab')) {
-          clearDropMarks();
-          endDropMode();
-          tabDrag = null;
-        }
-      }, 20000);
-    });
-
-    btn.addEventListener('dragover', (event) => {
-      if (!tabDrag || tabDrag.id === id) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = 'move';
-      // 落在标签的左半边就插到它前面，右半边就插到后面
-      const rect = btn.getBoundingClientRect();
-      const after = event.clientX > rect.left + rect.width / 2;
-      clearDropMarks();
-      btn.classList.add(after ? 'drop-after' : 'drop-before');
-    });
-
-    btn.addEventListener('dragleave', () => {
-      btn.classList.remove('drop-before', 'drop-after');
-    });
-
-    btn.addEventListener('drop', async (event) => {
-      if (!tabDrag || tabDrag.id === id) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const rect = btn.getBoundingClientRect();
-      const after = event.clientX > rect.left + rect.width / 2;
-      const dragged = tabDrag.id;
-      clearDropMarks();
-      await moveTab(dragged, id, after);
-    });
-
-    // 这里只收拾这个按钮自己的样式。
-    // 真正的收尾（退出拖拽模式、把站点视图放回来）挂在 document 上——
-    // drop 之后状态广播会让 renderTabs 重建标签节点，这个 btn 可能已经不在
-    // DOM 里了，绑在它身上的 dragend 就永远不会来。
-    btn.addEventListener('dragend', () => {
-      btn.classList.remove('dragging');
-    });
+  /** 按 id 取当前的标签按钮。
+   *  拖拽期间状态广播会重建标签节点，拖拽开始时抓到的那个按钮可能已经不在
+   *  DOM 里了——样式必须打在当下这个节点上，否则「被拖的那个变淡」会丢。 */
+  function tabBtn(id) {
+    const node = tabNodes.get(id);
+    return node ? node.btn : null;
   }
+
+  /** 真开始拖之前的普通点击不该被吃掉：只有超过阈值才进拖拽模式 */
+  function startTabDrag() {
+    const drag = tabDrag;
+    drag.active = true;
+    const btn = tabBtn(drag.id);
+    if (btn) btn.classList.add('dragging');
+    // 站点视图是原生层，永远盖在外壳页面之上：不让位的话，指针一离开标签栏，
+    // 下面的 mousemove 就都落到站点 webview 上了，投放区成了摆设。
+    // 让位走的是和设置面板同一套机制。
+    document.body.classList.add('dragging-tab');
+    dragYielding = true;
+    syncViewYield();
+    buildDropZones();
+    dragGhost = document.createElement('div');
+    dragGhost.className = 'tab-ghost';
+    dragGhost.textContent = (state.services.find((s) => s.id === drag.id) || {}).name || drag.id;
+    document.body.appendChild(dragGhost);
+    placeDragGhost(drag.fromX, drag.fromY);
+    // 兜底：鼠标事件要是丢了（系统打断、指针跑到屏幕外），让位状态会永久卡住，
+    // 站点视图一直不回来，整个应用看起来就是坏的。宁可多设一道定时器。
+    clearTimeout(dragBailout);
+    dragBailout = setTimeout(cancelTabDrag, 20000);
+  }
+
+  function placeDragGhost(x, y) {
+    if (!dragGhost) return;
+    dragGhost.style.left = x + 'px';
+    dragGhost.style.top = y + 'px';
+  }
+
+  /** 收尾的唯一出口：投放框、影子、让位状态一次收拾干净 */
+  function cancelTabDrag() {
+    clearTimeout(dragBailout);
+    clearDropMarks();
+    setHot(null);
+    if (dragGhost) {
+      dragGhost.remove();
+      dragGhost = null;
+    }
+    if (tabDrag) {
+      const btn = tabBtn(tabDrag.id);
+      if (btn) btn.classList.remove('dragging');
+      tabDrag = null;
+    }
+    endDropMode();
+  }
+
+  /** 指针压在哪个标签上（跳过被拖的那个）：{ id, after } 或 null */
+  function tabUnder(x, y) {
+    for (const [id, node] of tabNodes) {
+      if (tabDrag && id === tabDrag.id) continue;
+      const r = node.btn.getBoundingClientRect();
+      if (y < r.top || y > r.bottom) continue;
+      if (x < r.left - 6 || x > r.right + 6) continue;
+      return { id, after: x > r.left + r.width / 2, btn: node.btn };
+    }
+    return null;
+  }
+
+  function markTabUnder(hit) {
+    clearDropMarks();
+    if (hit) hit.btn.classList.add(hit.after ? 'drop-after' : 'drop-before');
+  }
+
+  function bindTabDrag(btn, id) {
+    btn.addEventListener('mousedown', (event) => {
+      if (event.button !== 0) return;                 // 只有左键拖
+      if (event.target.closest('.close')) return;     // × 不参与
+      tabDrag = { id, fromX: event.clientX, fromY: event.clientY, active: false };
+    }, true);
+  }
+
+  document.addEventListener('mousemove', (event) => {
+    if (!tabDrag) return;
+    if (!tabDrag.active) {
+      if (Math.hypot(event.clientX - tabDrag.fromX, event.clientY - tabDrag.fromY) < DRAG_THRESHOLD) return;
+      startTabDrag();
+    }
+    placeDragGhost(event.clientX, event.clientY);
+    // 压在别的标签上 = 换顺序；压在页面区域 = 分屏。两者不会同时亮。
+    const hit = tabUnder(event.clientX, event.clientY);
+    markTabUnder(hit);
+    if (hit) setHot(null);
+    else updateHotZone(event.clientX, event.clientY);
+  }, true);
+
+  document.addEventListener('mouseup', async (event) => {
+    if (!tabDrag || event.button !== 0) return;
+    const drag = tabDrag;
+    if (!drag.active) { tabDrag = null; return; }     // 没拖动 = 普通点击，交给 click
+    tabDrag = null;                                   // 先清掉：moveTab/applyDrop 里要广播状态
+    dragEndedAt = Date.now();
+    clearTimeout(dragBailout);
+    if (dragGhost) {
+      dragGhost.remove();
+      dragGhost = null;
+    }
+    const btn = tabBtn(drag.id);
+    if (btn) btn.classList.remove('dragging');
+    const hit = tabUnder(event.clientX, event.clientY);
+    clearDropMarks();
+    if (hit) {
+      endDropMode();
+      await moveTab(drag.id, hit.id, hit.after);
+      return;
+    }
+    updateHotZone(event.clientX, event.clientY);      // 以松手那一刻的位置为准
+    const ok = await applyDrop(drag.id);
+    endDropMode();
+    if (ok) {
+      // 落定之后把焦点给拖过去的那个，符合「我刚把它放这儿」的预期
+      window.api.focusPane(drag.id);
+    }
+  }, true);
+
+  // Esc 取消（HTML5 拖放本来就有这个行为，换成自己跟踪之后要补回来）
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && tabDrag && tabDrag.active) cancelTabDrag();
+  }, true);
+
+  // 刚拖完那一下，浏览器还会补一个 click 过来——别让它顺手切换标签
+  document.addEventListener('click', (event) => {
+    if (Date.now() - dragEndedAt > 300) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
 
   // ================== 拖拽分屏 ==================
   // 把标签拖到页面区域松手就分栏。落点分两类：
@@ -1595,46 +1697,8 @@
   // 之前拖过去光标一直显示「禁用」：事件先落在 .dz 子元素身上，而子元素没有
   // 自己的 dragover 处理器去调 preventDefault，浏览器就判定这里不允许放置。
   // 捕获阶段能在事件到达子元素之前先拿到它，一次性解决所有子元素。
-  dropLayer.addEventListener('dragover', (event) => {
-    if (!tabDrag) return;
-    // preventDefault 是 HTML5 DnD「允许放置」的开关，不调就是禁用光标 + 收不到 drop
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    updateHotZone(event.clientX, event.clientY);
-  }, true);
-
-  // dragenter 同理：不拦下来的话某些时机浏览器仍会判定不可放置
-  dropLayer.addEventListener('dragenter', (event) => {
-    if (!tabDrag) return;
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-  }, true);
-
-  // 拖拽收尾的唯一出口。挂在 document 上（捕获阶段）而不是标签按钮上：
-  // 标签节点会被 renderTabs 重建，绑在旧节点上的 dragend 收不到。
-  // 拖到窗口外松手、按 Esc 取消，浏览器同样会派发 dragend，这里都能兜住。
-  document.addEventListener('dragend', () => {
-    if (!tabDrag && !document.body.classList.contains('dragging-tab')) return;
-    clearDropMarks();
-    endDropMode();
-    tabDrag = null;
-  }, true);
-
-  dropLayer.addEventListener('drop', async (event) => {
-    if (!tabDrag) return;
-    event.preventDefault();
-    event.stopPropagation();
-    updateHotZone(event.clientX, event.clientY); // 以松手那一刻的位置为准
-    const dragId = tabDrag.id;
-    const ok = await applyDrop(dragId);
-    endDropMode();
-    tabDrag = null;
-    if (ok) {
-      // 落定之后把焦点给拖过去的那个，符合「我刚把它放这儿」的预期
-      window.api.focusPane(dragId);
-    }
-  });
+  // 投放区的拖拽状态由上面那套鼠标事件驱动（updateHotZone / applyDrop），
+  // 这里不再挂任何 HTML5 拖放处理器：外壳在 macOS 上根本收不到那些事件。
 
   async function moveTab(dragId, targetId, after) {
     // 只排「顶栏上看得见的」，主进程会把收起来的服务按原相对位置塞回去
@@ -2257,7 +2321,12 @@
     state.tabBarVisible = Boolean(res.tabBarVisible);
     // 标签栏一收起，站点视图的顶边就从 44 变成 0，整个外壳要重画
     document.body.classList.toggle('no-tabbar', !state.tabBarVisible);
-    toast(visible ? '标签栏已显示' : '标签栏已收起：再次打开设置可以放回来');
+    // 收起之后设置面板就点不开了，所以提示语里必须写清真正的回头路
+    // （托盘菜单是唯一还够得着的入口，见 src-tauri/src/lib.rs 的 ensure_tray）
+    toast(visible
+      ? '标签栏已显示'
+      : '标签栏已收起：' + (IS_MAC ? '点菜单栏里的' : '右键托盘里的')
+        + ' Aihub 图标 →「显示 / 隐藏标签栏」可以放回来');
   });
 
   // ---------------- 版本与强制更新 ----------------
