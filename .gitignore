@@ -23,6 +23,13 @@ hub-layout.json
 src-tauri/target/
 src-tauri/gen/schemas/
 
+# 本地临时目录（开发工具链安装包等，不进仓库）
+.tmp/
+
+# 编辑器缓存目录
+.workbuddy/
+.vscode
+
 # 更新包签名私钥 —— 绝不能进仓库
 src-tauri/*.key
 build-out.log

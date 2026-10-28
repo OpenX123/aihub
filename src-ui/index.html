@@ -2263,6 +2263,18 @@
   $('ap-close').innerHTML = svg('close');
 
   $('btn-reload').addEventListener('click', () => window.api.reload(null));
+
+  // F5 / Ctrl+R（macOS ⌘R）刷新当前标签，按住 Shift 硬刷新。
+  // 只在焦点位于外壳时生效；焦点在站点页面里时由 WebView2 自己处理。
+  document.addEventListener('keydown', (event) => {
+    const mod = IS_MAC ? event.metaKey : event.ctrlKey;
+    const wantsReload = event.key === 'F5' || (mod && (event.key === 'r' || event.key === 'R'));
+    if (!wantsReload || event.repeat) return;
+    event.preventDefault();
+    if (event.shiftKey) window.api.reloadHard(null);
+    else window.api.reload(null);
+  });
+
   $('btn-settings').addEventListener('click', () => setOverlay(true));
   $('btn-close').addEventListener('click', () => setOverlay(false));
   // 加号 = 往标签栏里加一个 AI，和设置面板（管理已有服务）分开

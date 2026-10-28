@@ -140,27 +140,44 @@ pub fn tab_activate(app: AppHandle, id: String) {
     });
 }
 
-#[tauri::command]
-pub fn tab_reload(app: AppHandle, id: String) {
-    if let Some(window) = app.get_window(MAIN_WINDOW) {
-        if let Some(view) = window.get_webview(&view_label(&id)) {
-            let _ = view.eval("location.reload()");
-        }
+/// 解析标签 id：`None` 或空串表示当前标签。
+///
+/// 部分调用方传的是 `null`（如右上角的刷新按钮），所以标签类命令一律用
+/// `Option<String>` 接参。写成 `String` 会在反序列化阶段失败，命令体不会执行。
+fn resolve_tab_id(app: &AppHandle, id: Option<String>) -> String {
+    id.filter(|id| !id.is_empty())
+        .unwrap_or_else(|| app.state::<AppState>().snapshot().active_id)
+}
+
+/// 刷新标签页面。后台标签和休眠标签没有 webview，直接跳过——
+/// 切回该标签时会按上次停留的地址重新加载。
+fn reload_view(app: &AppHandle, id: &str, ignore_cache: bool) {
+    let Some(window) = app.get_window(MAIN_WINDOW) else { return };
+    let Some(view) = window.get_webview(&view_label(id)) else {
+        return;
+    };
+    // reload(true) 的参数现代 Chromium 已忽略，硬刷新目前等同于普通刷新。
+    let js = if ignore_cache { "location.reload(true)" } else { "location.reload()" };
+    if let Err(err) = view.eval(js) {
+        eprintln!("[aihub] 刷新 {id} 失败: {err}");
     }
 }
 
 #[tauri::command]
-pub fn tab_reload_hard(app: AppHandle, id: String) {
-    // 硬刷新：绕过缓存重新拉一遍
-    if let Some(window) = app.get_window(MAIN_WINDOW) {
-        if let Some(view) = window.get_webview(&view_label(&id)) {
-            let _ = view.eval("location.reload(true)");
-        }
-    }
+pub fn tab_reload(app: AppHandle, id: Option<String>) {
+    let id = resolve_tab_id(&app, id);
+    reload_view(&app, &id, false);
 }
 
 #[tauri::command]
-pub fn tab_home(app: AppHandle, id: String) {
+pub fn tab_reload_hard(app: AppHandle, id: Option<String>) {
+    let id = resolve_tab_id(&app, id);
+    reload_view(&app, &id, true);
+}
+
+#[tauri::command]
+pub fn tab_home(app: AppHandle, id: Option<String>) {
+    let id = resolve_tab_id(&app, id);
     let config = app.state::<AppState>().snapshot();
     let Some(svc) = config.get_service(&id) else { return };
     let home = svc.url.clone();
@@ -174,11 +191,14 @@ pub fn tab_home(app: AppHandle, id: String) {
 }
 
 #[tauri::command]
-pub fn tab_devtools(app: AppHandle, id: String) {
+pub fn tab_devtools(app: AppHandle, id: Option<String>) {
     #[cfg(debug_assertions)]
-    if let Some(window) = app.get_window(MAIN_WINDOW) {
-        if let Some(view) = window.get_webview(&view_label(&id)) {
-            view.open_devtools();
+    {
+        let id = resolve_tab_id(&app, id);
+        if let Some(window) = app.get_window(MAIN_WINDOW) {
+            if let Some(view) = window.get_webview(&view_label(&id)) {
+                view.open_devtools();
+            }
         }
     }
     #[cfg(not(debug_assertions))]
@@ -189,8 +209,7 @@ pub fn tab_devtools(app: AppHandle, id: String) {
 
 #[tauri::command]
 pub fn tab_zoom(app: AppHandle, delta: f64, id: Option<String>) {
-    let config = app.state::<AppState>().snapshot();
-    let id = id.unwrap_or(config.active_id.clone());
+    let id = resolve_tab_id(&app, id);
     if let Some(window) = app.get_window(MAIN_WINDOW) {
         if let Some(view) = window.get_webview(&view_label(&id)) {
             // WebView2 没有直接的 setZoomLevel 暴露到 Tauri，
